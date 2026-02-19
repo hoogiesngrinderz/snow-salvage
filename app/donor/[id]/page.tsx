@@ -46,13 +46,14 @@ export default function PublicDonorPage() {
   const loadDonorPhoto = async () => {
     // helper to try a table + foreign key column
     const tryTable = async (table: string, fkCol: string) => {
-      const res = await supabase
-        .from(table)
-        .select('url, path, sort_order, created_at')
-        .eq(fkCol as any, donorId)
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: true })
-        .limit(1)
+const res = await (supabase as any)
+  .from(table)
+  .select('url, path, sort_order, created_at')
+  .eq(fkCol, donorId)
+  .order('sort_order', { ascending: true })
+  .order('created_at', { ascending: true })
+  .limit(50)
+
 
       if (res.error) return null
       const row = res.data?.[0] as any
