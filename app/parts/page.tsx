@@ -1,8 +1,11 @@
-'use client'
+"use client"
 
-import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+export const dynamic = "force-dynamic"
+
+import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
+import { getSupabaseBrowserClient } from "@/lib/supabase"
 
 type DonorMini = {
   id: string
@@ -25,32 +28,15 @@ type PartRow = {
   donor_sleds?: DonorMini | null
 }
 
-type SB = {
-  from: (table: string) => any
-}
-
-async function getSupabaseClient(): Promise<SB> {
-  // Only create on the client (prevents build/prerender crashes)
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!url || !key) {
-    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
-  }
-
-  const { createClient } = await import('@supabase/supabase-js')
-  return createClient(url, key) as unknown as SB
-}
-
 export default function PartsBrowsePage() {
   const router = useRouter()
   const sp = useSearchParams()
 
-  const make = (sp.get('make') ?? '').trim()
-  const model = (sp.get('model') ?? '').trim()
-  const yearRaw = (sp.get('year') ?? '').trim()
-  const donorId = (sp.get('donor') ?? '').trim()
-  const qParam = (sp.get('q') ?? '').trim()
+  const make = (sp.get("make") ?? "").trim()
+  const model = (sp.get("model") ?? "").trim()
+  const yearRaw = (sp.get("year") ?? "").trim()
+  const donorId = (sp.get("donor") ?? "").trim()
+  const qParam = (sp.get("q") ?? "").trim()
 
   const year = yearRaw ? Number(yearRaw) : null
   const yearValid = yearRaw ? Number.isFinite(year) : true
@@ -58,7 +44,6 @@ export default function PartsBrowsePage() {
   const [rows, setRows] = useState<PartRow[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState(qParam)
-  const [errMsg, setErrMsg] = useState<string | null>(null)
 
   useEffect(() => {
     setQ(qParam)
@@ -69,72 +54,60 @@ export default function PartsBrowsePage() {
   const buildUrl = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(sp.toString())
     for (const [k, v] of Object.entries(patch)) {
-      if (v === null || v === undefined || String(v).trim() === '') next.delete(k)
+      if (v === null || v === undefined || String(v).trim() === "") next.delete(k)
       else next.set(k, String(v))
     }
     const qs = next.toString()
-    return qs ? `/parts?${qs}` : '/parts'
+    return qs ? `/parts?${qs}` : "/parts"
   }
 
-  const clearAll = () => router.push('/parts')
+  const clearAll = () => router.push("/parts")
 
   useEffect(() => {
-    let alive = true
-
     const load = async () => {
       setLoading(true)
-      setErrMsg(null)
 
-      // If year is invalid, don't hit DB
       if (yearRaw && !yearValid) {
-        if (!alive) return
         setRows([])
         setLoading(false)
         return
       }
 
       try {
-        const supabase = await getSupabaseClient()
+        const supabase = getSupabaseBrowserClient()
 
         let query = supabase
-          .from('parts')
+          .from("parts")
           .select(
-            'id,donor_sled_id,title,category,condition,price,quantity,bin_location,is_listed,created_at,donor_sleds(id,make,model,year)'
+            "id,donor_sled_id,title,category,condition,price,quantity,bin_location,is_listed,created_at,donor_sleds(id,make,model,year)"
           )
-          .eq('is_listed', true)
-          .gt('quantity', 0)
-          .order('created_at', { ascending: false })
+          .eq("is_listed", true)
+          .gt("quantity", 0)
+          .order("created_at", { ascending: false })
           .limit(500)
 
-        if (donorId) query = query.eq('donor_sled_id', donorId)
-        if (make) query = query.eq('donor_sleds.make', make)
-        if (model) query = query.eq('donor_sleds.model', model)
-        if (yearRaw && yearValid) query = query.eq('donor_sleds.year', Number(yearRaw))
+        if (donorId) query = query.eq("donor_sled_id", donorId)
+        if (make) query = query.eq("donor_sleds.make", make)
+        if (model) query = query.eq("donor_sleds.model", model)
+        if (yearRaw && yearValid) query = query.eq("donor_sleds.year", Number(yearRaw))
 
         const { data, error } = await query
 
-        if (!alive) return
-
         if (error) {
+          console.error(error)
           setRows([])
-          setErrMsg(error.message)
         } else {
-          setRows((data ?? []) as PartRow[])
+          setRows((data ?? []) as unknown as PartRow[])
         }
-
-        setLoading(false)
-      } catch (e: any) {
-        if (!alive) return
+      } catch (e) {
+        console.error(e)
         setRows([])
-        setErrMsg(e?.message ?? String(e))
-        setLoading(false)
       }
+
+      setLoading(false)
     }
 
     load()
-    return () => {
-      alive = false
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [make, model, yearRaw, donorId])
 
@@ -148,9 +121,9 @@ export default function PartsBrowsePage() {
         r.donor_sleds?.year ? String(r.donor_sleds.year) : null,
       ]
         .filter(Boolean)
-        .join(' ')
+        .join(" ")
 
-      const blob = [r.title, r.category, r.condition, donorBits].filter(Boolean).join(' ').toLowerCase()
+      const blob = [r.title, r.category, r.condition, donorBits].filter(Boolean).join(" ").toLowerCase()
       return blob.includes(s)
     })
   }, [q, rows])
@@ -160,7 +133,7 @@ export default function PartsBrowsePage() {
     router.replace(buildUrl({ q: v.trim() ? v : null }))
   }
 
-  const pageTitle = make ? `${make} Parts` : 'Parts'
+  const pageTitle = make ? `${make} Parts` : "Parts"
 
   return (
     <div className="p-8">
@@ -184,7 +157,6 @@ export default function PartsBrowsePage() {
           )}
 
           {yearRaw && !yearValid && <div className="mt-3 text-xs text-red-700">Year filter is invalid.</div>}
-          {errMsg && <div className="mt-3 text-xs text-red-700">Error: {errMsg}</div>}
         </div>
 
         <input
@@ -203,14 +175,14 @@ export default function PartsBrowsePage() {
         {filtered.map((p) => (
           <Link key={p.id} href={`/parts/${p.id}`} className="border rounded-lg p-4 hover:shadow-sm transition">
             <div className="text-xs text-gray-600">
-              {p.category ?? '—'} • {p.condition ?? '—'}
+              {p.category ?? "—"} • {p.condition ?? "—"}
             </div>
 
             <div className="mt-1 font-semibold">{p.title}</div>
 
             {(p.donor_sleds?.make || p.donor_sleds?.model || p.donor_sleds?.year) && (
               <div className="mt-2 text-xs text-gray-500">
-                From: {[p.donor_sleds?.year, p.donor_sleds?.make, p.donor_sleds?.model].filter(Boolean).join(' ')}
+                From: {[p.donor_sleds?.year, p.donor_sleds?.make, p.donor_sleds?.model].filter(Boolean).join(" ")}
               </div>
             )}
 
