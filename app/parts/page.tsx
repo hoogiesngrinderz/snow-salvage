@@ -3,12 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-
-// NOTE:
-// Do NOT import supabase at the top-level.
-// Importing it during build/prerender can crash if env vars aren’t present.
-// We lazy-import inside useEffect instead.
 
 type DonorMini = {
   id: string
@@ -31,6 +25,23 @@ type PartRow = {
   donor_sleds?: DonorMini | null
 }
 
+type SB = {
+  from: (table: string) => any
+}
+
+async function getSupabaseClient(): Promise<SB> {
+  // Only create on the client (prevents build/prerender crashes)
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!url || !key) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  }
+
+  const { createClient } = await import('@supabase/supabase-js')
+  return createClient(url, key) as unknown as SB
+}
+
 export default function PartsBrowsePage() {
   const router = useRouter()
   const sp = useSearchParams()
@@ -49,7 +60,6 @@ export default function PartsBrowsePage() {
   const [q, setQ] = useState(qParam)
   const [errMsg, setErrMsg] = useState<string | null>(null)
 
-  // Keep input synced when URL changes (back/forward, home links, etc.)
   useEffect(() => {
     setQ(qParam)
   }, [qParam])
@@ -69,28 +79,22 @@ export default function PartsBrowsePage() {
   const clearAll = () => router.push('/parts')
 
   useEffect(() => {
+    let alive = true
+
     const load = async () => {
       setLoading(true)
       setErrMsg(null)
 
-      // If year is invalid, don't hit DB; just show none.
+      // If year is invalid, don't hit DB
       if (yearRaw && !yearValid) {
+        if (!alive) return
         setRows([])
         setLoading(false)
         return
       }
 
       try {
-        // ✅ Lazy import so build/prerender never touches supabase env vars
-        const mod = await import('@/lib/supabase')
-        const supabase = (mod as any).supabase
-
-        if (!supabase) {
-          setErrMsg('Supabase client not available. Check your /lib/supabase export.')
-          setRows([])
-          setLoading(false)
-          return
-        }
+        const supabase = await getSupabaseClient()
 
         let query = supabase
           .from('parts')
@@ -109,25 +113,31 @@ export default function PartsBrowsePage() {
 
         const { data, error } = await query
 
+        if (!alive) return
+
         if (error) {
-          setErrMsg(error.message)
           setRows([])
+          setErrMsg(error.message)
         } else {
-          setRows((data ?? []) as unknown as PartRow[])
+          setRows((data ?? []) as PartRow[])
         }
+
+        setLoading(false)
       } catch (e: any) {
-        setErrMsg(e?.message ?? String(e))
+        if (!alive) return
         setRows([])
-      } finally {
+        setErrMsg(e?.message ?? String(e))
         setLoading(false)
       }
     }
 
     load()
+    return () => {
+      alive = false
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [make, model, yearRaw, donorId])
 
-  // Client-side search
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (!s) return rows
@@ -135,16 +145,12 @@ export default function PartsBrowsePage() {
       const donorBits = [
         r.donor_sleds?.make,
         r.donor_sleds?.model,
-        r.donor_sleds?.year ? String(r.donor_sleds?.year) : null,
+        r.donor_sleds?.year ? String(r.donor_sleds.year) : null,
       ]
         .filter(Boolean)
         .join(' ')
 
-      const blob = [r.title, r.category, r.condition, donorBits]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-
+      const blob = [r.title, r.category, r.condition, donorBits].filter(Boolean).join(' ').toLowerCase()
       return blob.includes(s)
     })
   }, [q, rows])
@@ -166,35 +172,19 @@ export default function PartsBrowsePage() {
           {hasFilters && (
             <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
               {make && <Chip label={`Make: ${make}`} onClear={() => router.push(buildUrl({ make: null }))} />}
-              {yearRaw && yearValid && (
-                <Chip label={`Year: ${yearRaw}`} onClear={() => router.push(buildUrl({ year: null }))} />
-              )}
+              {yearRaw && yearValid && <Chip label={`Year: ${yearRaw}`} onClear={() => router.push(buildUrl({ year: null }))} />}
               {model && <Chip label={`Model: ${model}`} onClear={() => router.push(buildUrl({ model: null }))} />}
-              {donorId && (
-                <Chip
-                  label={`Donor: ${donorId.slice(0, 8)}…`}
-                  onClear={() => router.push(buildUrl({ donor: null }))}
-                />
-              )}
+              {donorId && <Chip label={`Donor: ${donorId.slice(0, 8)}…`} onClear={() => router.push(buildUrl({ donor: null }))} />}
               {qParam && <Chip label={`Search: ${qParam}`} onClear={() => router.push(buildUrl({ q: null }))} />}
 
-              <button
-                type="button"
-                className="ml-1 px-3 py-1 rounded border text-xs hover:bg-gray-50"
-                onClick={clearAll}
-              >
+              <button type="button" className="ml-1 px-3 py-1 rounded border text-xs hover:bg-gray-50" onClick={clearAll}>
                 Clear all
               </button>
             </div>
           )}
 
-          {yearRaw && !yearValid && (
-            <div className="mt-3 text-xs text-red-700">Year filter is invalid.</div>
-          )}
-
-          {errMsg && (
-            <div className="mt-3 text-xs text-red-700">Error: {errMsg}</div>
-          )}
+          {yearRaw && !yearValid && <div className="mt-3 text-xs text-red-700">Year filter is invalid.</div>}
+          {errMsg && <div className="mt-3 text-xs text-red-700">Error: {errMsg}</div>}
         </div>
 
         <input
@@ -207,9 +197,7 @@ export default function PartsBrowsePage() {
 
       {loading && <div className="mt-6 text-sm text-gray-600">Loading…</div>}
 
-      {!loading && filtered.length === 0 && (
-        <div className="mt-6 text-sm text-gray-600">No parts found.</div>
-      )}
+      {!loading && filtered.length === 0 && <div className="mt-6 text-sm text-gray-600">No parts found.</div>}
 
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map((p) => (
@@ -222,10 +210,7 @@ export default function PartsBrowsePage() {
 
             {(p.donor_sleds?.make || p.donor_sleds?.model || p.donor_sleds?.year) && (
               <div className="mt-2 text-xs text-gray-500">
-                From:{' '}
-                {[p.donor_sleds?.year, p.donor_sleds?.make, p.donor_sleds?.model]
-                  .filter(Boolean)
-                  .join(' ')}
+                From: {[p.donor_sleds?.year, p.donor_sleds?.make, p.donor_sleds?.model].filter(Boolean).join(' ')}
               </div>
             )}
 
@@ -234,9 +219,7 @@ export default function PartsBrowsePage() {
               <div className="text-xs text-gray-600">Qty {p.quantity}</div>
             </div>
 
-            <div className="mt-2 text-xs text-gray-500">
-              Listed {new Date(p.created_at).toLocaleDateString()}
-            </div>
+            <div className="mt-2 text-xs text-gray-500">Listed {new Date(p.created_at).toLocaleDateString()}</div>
           </Link>
         ))}
       </div>
