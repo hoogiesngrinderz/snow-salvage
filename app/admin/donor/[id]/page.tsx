@@ -53,13 +53,17 @@ type ConfirmModalState = null | {
  * DROP-IN FILE
  * Save as: app/admin/donor/[id]/page.tsx
  *
- * Fix included:
- * - Year validation no longer uses a possibly-null value in numeric comparisons (Vercel build fix).
+ * Fixes included:
+ * - Defines supabase client (prevents "Cannot find name 'supabase'")
+ * - Year validation avoids nullable numeric comparisons (TS build fix)
  */
 
 export default function DonorDetailPage() {
   const params = useParams<{ id: string }>()
   const donorId = params.id
+
+  // ✅ create the client inside the Client Component
+  const supabase = getSupabaseBrowserClient()
 
   const [donor, setDonor] = useState<DonorSled | null>(null)
   const [parts, setParts] = useState<PartRow[]>([])
@@ -101,7 +105,11 @@ export default function DonorDetailPage() {
     setMsg(null)
 
     const donorRes = await supabase.from('donor_sleds').select('*').eq('id', donorId).single()
-    if (!donorRes.error) setDonor(donorRes.data as DonorSled)
+    if (donorRes.error) {
+      setDonor(null)
+    } else {
+      setDonor(donorRes.data as DonorSled)
+    }
 
     const partsRes = await supabase
       .from('parts')
@@ -111,6 +119,7 @@ export default function DonorDetailPage() {
       .limit(1000)
 
     if (!partsRes.error && partsRes.data) setParts(partsRes.data as PartRow[])
+    else setParts([])
 
     const imgRes = await supabase
       .from('donor_images')
@@ -160,6 +169,7 @@ export default function DonorDetailPage() {
       if ('engine' in patch) dbPatch.engine = patch.engine
       if ('year' in patch) dbPatch.year = patch.year
       if ('miles' in patch) dbPatch.miles = patch.miles
+      if ('notes' in patch) dbPatch.notes = patch.notes
 
       const { error } = await supabase.from('donor_sleds').update(dbPatch).eq('id', donorId)
       if (error) throw error
@@ -187,6 +197,11 @@ export default function DonorDetailPage() {
       if ('quantity' in patch) dbPatch.quantity = Number((patch.quantity as any) ?? 0)
       if ('bin_location' in patch) dbPatch.bin_location = patch.bin_location
       if ('is_listed' in patch) dbPatch.is_listed = patch.is_listed
+      if ('sku' in patch) dbPatch.sku = patch.sku
+      if ('part_number' in patch) dbPatch.part_number = patch.part_number
+      if ('title' in patch) dbPatch.title = patch.title
+      if ('category' in patch) dbPatch.category = patch.category
+      if ('condition' in patch) dbPatch.condition = patch.condition
 
       const { error } = await supabase.from('parts').update(dbPatch).eq('id', partId)
       if (error) throw error
@@ -336,10 +351,7 @@ export default function DonorDetailPage() {
           const { data: pub } = supabase.storage.from('part-images').getPublicUrl(path)
           const url = pub.publicUrl
 
-          const insImg = await supabase
-            .from('part_images')
-            .insert([{ part_id: partId, url, path, sort_order: i }])
-
+          const insImg = await supabase.from('part_images').insert([{ part_id: partId, url, path, sort_order: i }])
           if (insImg.error) throw insImg.error
         }
       }
@@ -379,11 +391,7 @@ export default function DonorDetailPage() {
   const setQty = async (p: PartRow, qty: number) => {
     if (busy) return
     const nextListed = normalizeListing(qty, p.is_listed)
-    await updatePart(
-      p.id,
-      { quantity: qty, is_listed: nextListed },
-      qty <= 0 ? 'Qty set to 0 ✅ (auto-hidden)' : 'Qty updated ✅'
-    )
+    await updatePart(p.id, { quantity: qty, is_listed: nextListed }, qty <= 0 ? 'Qty set to 0 ✅ (auto-hidden)' : 'Qty updated ✅')
   }
 
   const soldOut = async (p: PartRow) => {
@@ -510,18 +518,18 @@ export default function DonorDetailPage() {
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          {/* ✅ FIXED YEAR BLOCK (no nullable numeric comparisons) */}
+          {/* ✅ FIXED YEAR BLOCK */}
           <Editable
             label="Year"
             value={donor.year ?? ''}
             mono
             onCommit={async (v) => {
               const raw = v.trim()
-
               if (!raw) {
                 await updateDonor({ year: null }, 'Year cleared ✅')
                 return
               }
+
               const yearNum = Number(raw)
               if (!Number.isFinite(yearNum) || yearNum < 1900 || yearNum > 2100) {
                 setMsg('Year must be 1900–2100')
