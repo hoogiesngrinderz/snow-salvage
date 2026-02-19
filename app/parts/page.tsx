@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+
+// NOTE:
+// Do NOT import supabase at the top-level.
+// Importing it during build/prerender can crash if env vars aren’t present.
+// We lazy-import inside useEffect instead.
 
 type DonorMini = {
   id: string
@@ -42,6 +46,7 @@ export default function PartsBrowsePage() {
   const [rows, setRows] = useState<PartRow[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState(qParam)
+  const [errMsg, setErrMsg] = useState<string | null>(null)
 
   // Keep input synced when URL changes (back/forward, home links, etc.)
   useEffect(() => {
@@ -65,47 +70,63 @@ export default function PartsBrowsePage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true)
+      setErrMsg(null)
 
-      // Base query (same as before)
-      let query = supabase
-        .from('parts')
-        .select(
-          // embed donor so we can filter by make/year/model and show context
-          'id,donor_sled_id,title,category,condition,price,quantity,bin_location,is_listed,created_at,donor_sleds(id,make,model,year)'
-        )
-        .eq('is_listed', true)
-        .gt('quantity', 0)
-        .order('created_at', { ascending: false })
-        .limit(500)
+      // If year is invalid, don't hit DB; just show none.
+      if (yearRaw && !yearValid) {
+        setRows([])
+        setLoading(false)
+        return
+      }
 
-      // Filter by donor id if provided
-      if (donorId) query = query.eq('donor_sled_id', donorId)
+      try {
+        // ✅ Lazy import so build/prerender never touches supabase env vars
+        const mod = await import('@/lib/supabase')
+        const supabase = (mod as any).supabase
 
-      // Filter by donor fields (requires the embedded relation)
-      if (make) query = query.eq('donor_sleds.make', make)
-      if (model) query = query.eq('donor_sleds.model', model)
-      if (yearRaw && yearValid) query = query.eq('donor_sleds.year', Number(yearRaw))
+        if (!supabase) {
+          setErrMsg('Supabase client not available. Check your /lib/supabase export.')
+          setRows([])
+          setLoading(false)
+          return
+        }
 
-      const { data, error } = await query
+        let query = supabase
+          .from('parts')
+          .select(
+            'id,donor_sled_id,title,category,condition,price,quantity,bin_location,is_listed,created_at,donor_sleds(id,make,model,year)'
+          )
+          .eq('is_listed', true)
+          .gt('quantity', 0)
+          .order('created_at', { ascending: false })
+          .limit(500)
 
-      if (!error && data) setRows(data as unknown as PartRow[])
-      else setRows([])
+        if (donorId) query = query.eq('donor_sled_id', donorId)
+        if (make) query = query.eq('donor_sleds.make', make)
+        if (model) query = query.eq('donor_sleds.model', model)
+        if (yearRaw && yearValid) query = query.eq('donor_sleds.year', Number(yearRaw))
 
-      setLoading(false)
-    }
+        const { data, error } = await query
 
-    // If year is invalid, don't hit DB; just show none.
-    if (yearRaw && !yearValid) {
-      setRows([])
-      setLoading(false)
-      return
+        if (error) {
+          setErrMsg(error.message)
+          setRows([])
+        } else {
+          setRows((data ?? []) as unknown as PartRow[])
+        }
+      } catch (e: any) {
+        setErrMsg(e?.message ?? String(e))
+        setRows([])
+      } finally {
+        setLoading(false)
+      }
     }
 
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [make, model, yearRaw, donorId])
 
-  // Client-side search (keeps your original behavior)
+  // Client-side search
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (!s) return rows
@@ -129,8 +150,6 @@ export default function PartsBrowsePage() {
 
   const onSearchChange = (v: string) => {
     setQ(v)
-    // Keep URL in sync, but don’t spam router on every keystroke if you don’t want to.
-    // This is still very lightweight in Next.
     router.replace(buildUrl({ q: v.trim() ? v : null }))
   }
 
@@ -150,7 +169,12 @@ export default function PartsBrowsePage() {
                 <Chip label={`Year: ${yearRaw}`} onClear={() => router.push(buildUrl({ year: null }))} />
               )}
               {model && <Chip label={`Model: ${model}`} onClear={() => router.push(buildUrl({ model: null }))} />}
-              {donorId && <Chip label={`Donor: ${donorId.slice(0, 8)}…`} onClear={() => router.push(buildUrl({ donor: null }))} />}
+              {donorId && (
+                <Chip
+                  label={`Donor: ${donorId.slice(0, 8)}…`}
+                  onClear={() => router.push(buildUrl({ donor: null }))}
+                />
+              )}
               {qParam && <Chip label={`Search: ${qParam}`} onClear={() => router.push(buildUrl({ q: null }))} />}
 
               <button
@@ -165,6 +189,10 @@ export default function PartsBrowsePage() {
 
           {yearRaw && !yearValid && (
             <div className="mt-3 text-xs text-red-700">Year filter is invalid.</div>
+          )}
+
+          {errMsg && (
+            <div className="mt-3 text-xs text-red-700">Error: {errMsg}</div>
           )}
         </div>
 
@@ -184,11 +212,7 @@ export default function PartsBrowsePage() {
 
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map((p) => (
-          <Link
-            key={p.id}
-            href={`/parts/${p.id}`}
-            className="border rounded-lg p-4 hover:shadow-sm transition"
-          >
+          <Link key={p.id} href={`/parts/${p.id}`} className="border rounded-lg p-4 hover:shadow-sm transition">
             <div className="text-xs text-gray-600">
               {p.category ?? '—'} • {p.condition ?? '—'}
             </div>
@@ -197,7 +221,10 @@ export default function PartsBrowsePage() {
 
             {(p.donor_sleds?.make || p.donor_sleds?.model || p.donor_sleds?.year) && (
               <div className="mt-2 text-xs text-gray-500">
-                From: {[p.donor_sleds?.year, p.donor_sleds?.make, p.donor_sleds?.model].filter(Boolean).join(' ')}
+                From:{' '}
+                {[p.donor_sleds?.year, p.donor_sleds?.make, p.donor_sleds?.model]
+                  .filter(Boolean)
+                  .join(' ')}
               </div>
             )}
 
