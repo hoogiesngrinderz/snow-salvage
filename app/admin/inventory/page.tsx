@@ -2,18 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase'
-
-type DonorSled = {
-  id: string
-  vin: string | null
-  make: string | null
-  model: string | null
-  year: number | null
-  engine: string | null
-  miles: number | null
-  created_at: string
-}
 
 type PartRow = {
   id: string
@@ -28,196 +18,262 @@ type PartRow = {
   bin_location: string | null
   is_listed: boolean
   created_at: string
-  donor_sleds?: Pick<DonorSled, 'id' | 'make' | 'model' | 'year'> | null
 }
 
-export default function AdminInventoryPage() {
+export default function AdminPartEditPage() {
+  const params = useParams<{ id: string }>()
+  const router = useRouter()
+  const id = params.id
+
   // ✅ FIX: define supabase
   const supabase = useMemo(() => getSupabaseBrowserClient(), [])
 
   const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
 
-  const [donors, setDonors] = useState<DonorSled[]>([])
-  const [parts, setParts] = useState<PartRow[]>([])
-
-  const [q, setQ] = useState('')
-  const [showHidden, setShowHidden] = useState(false)
+  const [p, setP] = useState<PartRow | null>(null)
 
   const load = async () => {
     setLoading(true)
-    setErr(null)
+    setMsg(null)
 
-    try {
-      // 1) load donors
-      const donorsRes = await supabase
-        .from('donor_sleds')
-        .select('id,vin,make,model,year,engine,miles,created_at')
-        .order('created_at', { ascending: false })
-        .limit(1000)
-
-      if (donorsRes.error) throw donorsRes.error
-      setDonors((donorsRes.data ?? []) as DonorSled[])
-
-      // 2) load parts (include donor context)
-      const partsRes = await supabase
-        .from('parts')
-        .select(
-          'id,donor_sled_id,sku,part_number,title,category,condition,price,quantity,bin_location,is_listed,created_at,donor_sleds(id,make,model,year)'
-        )
-        .order('created_at', { ascending: false })
-        .limit(2000)
-
-      if (partsRes.error) throw partsRes.error
-      setParts((partsRes.data ?? []) as unknown as PartRow[])
-    } catch (e: any) {
-      setErr(e?.message ?? String(e))
-      setDonors([])
-      setParts([])
-    } finally {
+    const { data, error } = await supabase.from('parts').select('*').eq('id', id).single()
+    if (error) {
+      setMsg(`Error: ${error.message}`)
+      setP(null)
       setLoading(false)
+      return
     }
+
+    setP(data as PartRow)
+    setLoading(false)
   }
 
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [id])
 
-  const filteredParts = useMemo(() => {
-    const s = q.trim().toLowerCase()
+  const update = async (patch: Partial<PartRow>, successMsg?: string) => {
+    if (!p) return
+    setSaving(true)
+    setMsg(null)
 
-    let rows = parts
-    if (!showHidden) rows = rows.filter((p) => p.is_listed && p.quantity > 0)
+    // optimistic
+    setP({ ...p, ...patch })
 
-    if (!s) return rows
+    try {
+      const dbPatch: any = { ...patch }
 
-    return rows.filter((p) => {
-      const donorBits = [
-        p.donor_sleds?.year ? String(p.donor_sleds.year) : null,
-        p.donor_sleds?.make,
-        p.donor_sleds?.model,
-      ]
-        .filter(Boolean)
-        .join(' ')
+      // normalize numeric fields
+      if ('price' in dbPatch) dbPatch.price = Number(dbPatch.price ?? 0)
+      if ('quantity' in dbPatch) dbPatch.quantity = Number(dbPatch.quantity ?? 0)
 
-      const blob = [
-        p.title,
-        p.category,
-        p.condition,
-        p.sku,
-        p.part_number,
-        p.bin_location,
-        donorBits,
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
+      // if qty is 0, auto-unlist
+      if ('quantity' in dbPatch) {
+        const q = Number(dbPatch.quantity ?? 0)
+        if (q <= 0) dbPatch.is_listed = false
+      }
 
-      return blob.includes(s)
-    })
-  }, [parts, q, showHidden])
+      const { error } = await supabase.from('parts').update(dbPatch).eq('id', id)
+      if (error) throw error
+
+      if (successMsg) setMsg(successMsg)
+    } catch (e: any) {
+      setMsg(`Error: ${e?.message ?? String(e)}`)
+      await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!p) return
+
+    // basic validation
+    if (!p.title?.trim()) return setMsg('Title is required.')
+    if (!Number.isFinite(Number(p.price)) || Number(p.price) < 0) return setMsg('Price must be 0 or more.')
+    if (!Number.isFinite(Number(p.quantity)) || Number(p.quantity) < 0) return setMsg('Quantity must be 0 or more.')
+
+    await update(
+      {
+        title: p.title.trim(),
+        sku: p.sku?.trim() ? p.sku.trim() : null,
+        part_number: p.part_number?.trim() ? p.part_number.trim() : null,
+        category: p.category?.trim() ? p.category.trim() : null,
+        condition: p.condition?.trim() ? p.condition.trim() : null,
+        bin_location: p.bin_location?.trim() ? p.bin_location.trim() : null,
+        price: Number(p.price),
+        quantity: Number(p.quantity),
+        is_listed: p.quantity > 0 ? !!p.is_listed : false,
+      },
+      'Saved ✅'
+    )
+  }
+
+  const onDelete = async () => {
+    if (!confirm('Delete this part? This cannot be undone.')) return
+    setSaving(true)
+    setMsg(null)
+    try {
+      const { error } = await supabase.from('parts').delete().eq('id', id)
+      if (error) throw error
+      router.push('/admin/inventory')
+    } catch (e: any) {
+      setMsg(`Error: ${e?.message ?? String(e)}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <div className="p-8">Loading…</div>
+  if (!p) return <div className="p-8">Not found.</div>
 
   return (
-    <div className="p-8">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="p-8 max-w-3xl">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold">Inventory</h1>
-          <p className="text-sm text-gray-600 mt-1">Donors + parts overview.</p>
+          <h1 className="text-2xl font-bold">Edit Part</h1>
+          <div className="text-xs text-gray-600 mt-1">
+            Created {new Date(p.created_at).toLocaleString()}
+          </div>
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          <Link className="border rounded px-3 py-2" href={`/admin/donor/${p.donor_sled_id}`}>
+            ← Back to Donor
+          </Link>
+          <Link className="border rounded px-3 py-2" href={`/parts/${p.id}`}>
+            Public
+          </Link>
+          <button className="border rounded px-3 py-2" onClick={load} disabled={saving}>
+            Refresh
+          </button>
+          <button className="border rounded px-3 py-2 text-red-700" onClick={onDelete} disabled={saving}>
+            Delete
+          </button>
+        </div>
+      </div>
+
+      {msg && <div className="mt-4 text-sm">{msg}</div>}
+
+      <form onSubmit={onSave} className="mt-6 border rounded p-5 space-y-4">
+        <Field label="Title *">
+          <input
+            className="border rounded p-2 w-full"
+            value={p.title ?? ''}
+            onChange={(e) => setP({ ...(p as PartRow), title: e.target.value })}
+          />
+        </Field>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Field label="SKU">
+            <input
+              className="border rounded p-2 w-full font-mono"
+              value={p.sku ?? ''}
+              onChange={(e) => setP({ ...(p as PartRow), sku: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Part Number">
+            <input
+              className="border rounded p-2 w-full font-mono"
+              value={p.part_number ?? ''}
+              onChange={(e) => setP({ ...(p as PartRow), part_number: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Category">
+            <input
+              className="border rounded p-2 w-full"
+              value={p.category ?? ''}
+              onChange={(e) => setP({ ...(p as PartRow), category: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Condition">
+            <input
+              className="border rounded p-2 w-full"
+              value={p.condition ?? ''}
+              onChange={(e) => setP({ ...(p as PartRow), condition: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Bin Location">
+            <input
+              className="border rounded p-2 w-full"
+              value={p.bin_location ?? ''}
+              onChange={(e) => setP({ ...(p as PartRow), bin_location: e.target.value })}
+            />
+          </Field>
+
+          <Field label="Price">
+            <input
+              className="border rounded p-2 w-full"
+              inputMode="decimal"
+              value={String(p.price ?? 0)}
+              onChange={(e) => setP({ ...(p as PartRow), price: Number(e.target.value || 0) })}
+            />
+          </Field>
+
+          <Field label="Quantity">
+            <input
+              className="border rounded p-2 w-full"
+              inputMode="numeric"
+              value={String(p.quantity ?? 0)}
+              onChange={(e) => setP({ ...(p as PartRow), quantity: Number(e.target.value || 0) })}
+            />
+          </Field>
+
+          <Field label="Listed">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={!!p.is_listed}
+                disabled={saving || (p.quantity ?? 0) <= 0}
+                onChange={(e) => setP({ ...(p as PartRow), is_listed: e.target.checked })}
+              />
+              <span className="text-gray-700">
+                Visible on public site {((p.quantity ?? 0) <= 0) ? '(disabled when qty is 0)' : ''}
+              </span>
+            </label>
+          </Field>
         </div>
 
         <div className="flex gap-3 flex-wrap">
-          <button className="border rounded px-3 py-2" onClick={load} disabled={loading}>
-            {loading ? 'Loading…' : 'Refresh'}
+          <button
+            type="submit"
+            className="bg-black text-white rounded px-4 py-2 disabled:opacity-60"
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : 'Save'}
           </button>
 
-          <Link className="border rounded px-3 py-2" href="/admin/donor">
-            Donors
+          <button
+            type="button"
+            className="border rounded px-4 py-2"
+            disabled={saving}
+            onClick={() => update({ is_listed: !(p.is_listed && (p.quantity ?? 0) > 0) }, p.is_listed ? 'Unlisted ✅' : 'Listed ✅')}
+          >
+            {p.is_listed ? 'Unlist' : 'List'}
+          </button>
+
+          <Link className="border rounded px-4 py-2" href={`/admin/parts/${p.id}/photos`}>
+            Manage Photos
           </Link>
-
-          <Link className="bg-black text-white rounded px-4 py-2" href="/admin/donor/new">
-            + Add Donor
-          </Link>
         </div>
-      </div>
+      </form>
+    </div>
+  )
+}
 
-      {err && <div className="mt-4 text-sm text-red-700">Error: {err}</div>}
-
-      <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="border rounded p-4">
-          <div className="text-xs text-gray-600">Donors</div>
-          <div className="mt-1 text-2xl font-semibold">{donors.length}</div>
-        </div>
-
-        <div className="border rounded p-4">
-          <div className="text-xs text-gray-600">Parts</div>
-          <div className="mt-1 text-2xl font-semibold">{parts.length}</div>
-        </div>
-
-        <div className="border rounded p-4">
-          <div className="text-xs text-gray-600">Visible (listed + in stock)</div>
-          <div className="mt-1 text-2xl font-semibold">
-            {parts.filter((p) => p.is_listed && p.quantity > 0).length}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 flex items-center justify-between gap-3 flex-wrap">
-        <input
-          className="border rounded p-2 w-full max-w-2xl"
-          placeholder="Search parts, donor make/model/year, SKU, bin…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-
-        <label className="text-sm text-gray-700 flex items-center gap-2">
-          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
-          Show hidden / out-of-stock
-        </label>
-      </div>
-
-      {loading && <div className="mt-6 text-sm text-gray-600">Loading…</div>}
-
-      {!loading && (
-        <div className="mt-6 border rounded overflow-hidden">
-          <div className="grid grid-cols-12 bg-gray-50 text-sm font-medium px-3 py-2">
-            <div className="col-span-5">Part</div>
-            <div className="col-span-3">Donor</div>
-            <div className="col-span-2">Price</div>
-            <div className="col-span-1">Qty</div>
-            <div className="col-span-1 text-right">Open</div>
-          </div>
-
-          {filteredParts.map((p) => (
-            <div key={p.id} className="grid grid-cols-12 px-3 py-3 border-t text-sm items-center">
-              <div className="col-span-5 min-w-0">
-                <div className="font-medium truncate">{p.title}</div>
-                <div className="text-xs text-gray-600 truncate">
-                  {p.category ?? '—'} • {p.condition ?? '—'} • Bin: {p.bin_location ?? '—'} • SKU:{' '}
-                  <span className="font-mono">{p.sku ?? '—'}</span>
-                </div>
-              </div>
-
-              <div className="col-span-3 text-xs text-gray-700 truncate">
-                {[p.donor_sleds?.year, p.donor_sleds?.make, p.donor_sleds?.model].filter(Boolean).join(' ') || '—'}
-              </div>
-
-              <div className="col-span-2 font-semibold">${Number(p.price ?? 0).toFixed(2)}</div>
-              <div className="col-span-1">{p.quantity ?? 0}</div>
-
-              <div className="col-span-1 text-right">
-                <Link className="underline" href={`/admin/inventory/${p.id}`}>
-                  View
-                </Link>
-              </div>
-            </div>
-          ))}
-
-          {filteredParts.length === 0 && (
-            <div className="p-6 text-sm text-gray-600">No parts found.</div>
-          )}
-        </div>
-      )}
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-sm font-medium mb-1">{label}</div>
+      {children}
     </div>
   )
 }
