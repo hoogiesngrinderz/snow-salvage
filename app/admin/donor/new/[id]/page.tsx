@@ -52,6 +52,9 @@ export default function DonorDetailPage() {
   const params = useParams<{ id: string }>()
   const donorId = params.id
 
+  // ✅ FIX: create a browser supabase client for this page
+  const supabase = useMemo(() => getSupabaseBrowserClient(), [])
+
   const [donor, setDonor] = useState<DonorSled | null>(null)
   const [parts, setParts] = useState<PartRow[]>([])
   const [donorImages, setDonorImages] = useState<DonorImage[]>([])
@@ -92,12 +95,7 @@ export default function DonorDetailPage() {
     setLoading(true)
     setMsg(null)
 
-    const donorRes = await supabase
-      .from('donor_sleds')
-      .select('*')
-      .eq('id', donorId)
-      .single()
-
+    const donorRes = await supabase.from('donor_sleds').select('*').eq('id', donorId).single()
     if (!donorRes.error) setDonor(donorRes.data as DonorSled)
 
     const partsRes = await supabase
@@ -141,7 +139,7 @@ export default function DonorDetailPage() {
     setMsg(null)
     setBusy(true)
 
-    setParts(prev => prev.map(p => (p.id === partId ? { ...p, ...patch } : p)))
+    setParts((prev) => prev.map((p) => (p.id === partId ? { ...p, ...patch } : p)))
 
     try {
       const dbPatch: any = {}
@@ -167,9 +165,9 @@ export default function DonorDetailPage() {
     if (!files || files.length === 0) return
     partPhotoPreviews.forEach((u) => URL.revokeObjectURL(u))
 
-    const arr = Array.from(files).filter(f => f.type.startsWith('image/'))
+    const arr = Array.from(files).filter((f) => f.type.startsWith('image/'))
     setPartPhotoFiles(arr)
-    setPartPhotoPreviews(arr.map(f => URL.createObjectURL(f)))
+    setPartPhotoPreviews(arr.map((f) => URL.createObjectURL(f)))
   }
 
   const removePartPhotoAt = (idx: number) => {
@@ -184,9 +182,9 @@ export default function DonorDetailPage() {
     if (!files || files.length === 0) return
     donorPhotoPreviews.forEach((u) => URL.revokeObjectURL(u))
 
-    const arr = Array.from(files).filter(f => f.type.startsWith('image/'))
+    const arr = Array.from(files).filter((f) => f.type.startsWith('image/'))
     setDonorPhotoFiles(arr)
-    setDonorPhotoPreviews(arr.map(f => URL.createObjectURL(f)))
+    setDonorPhotoPreviews(arr.map((f) => URL.createObjectURL(f)))
   }
 
   const removeDonorPhotoAt = (idx: number) => {
@@ -206,8 +204,7 @@ export default function DonorDetailPage() {
     setMsg(null)
 
     try {
-      // next sort index
-      const base = donorImages.length ? Math.max(...donorImages.map(i => i.sort_order ?? 0)) + 1 : 0
+      const base = donorImages.length ? Math.max(...donorImages.map((i) => i.sort_order ?? 0)) + 1 : 0
 
       for (let i = 0; i < donorPhotoFiles.length; i++) {
         const file = donorPhotoFiles[i]
@@ -220,16 +217,17 @@ export default function DonorDetailPage() {
         const { data: pub } = supabase.storage.from('donor-images').getPublicUrl(path)
         const url = pub.publicUrl
 
-        const ins = await supabase.from('donor_images').insert([{
-          donor_sled_id: donorId,
-          url,
-          sort_order: base + i,
-        }])
+        const ins = await supabase.from('donor_images').insert([
+          {
+            donor_sled_id: donorId,
+            url,
+            sort_order: base + i,
+          },
+        ])
 
         if (ins.error) throw ins.error
       }
 
-      // clear picker
       donorPhotoPreviews.forEach((u) => URL.revokeObjectURL(u))
       setDonorPhotoFiles([])
       setDonorPhotoPreviews([])
@@ -284,17 +282,11 @@ export default function DonorDetailPage() {
         is_listed: normalizeListing(qty, listed),
       }
 
-      const partInsert = await supabase
-        .from('parts')
-        .insert([payload])
-        .select('id')
-        .single()
-
+      const partInsert = await supabase.from('parts').insert([payload]).select('id').single()
       if (partInsert.error) throw partInsert.error
 
       const partId = partInsert.data.id as string
 
-      // Upload part photos
       if (partPhotoFiles.length > 0) {
         for (let i = 0; i < partPhotoFiles.length; i++) {
           const file = partPhotoFiles[i]
@@ -307,17 +299,18 @@ export default function DonorDetailPage() {
           const { data: pub } = supabase.storage.from('part-images').getPublicUrl(path)
           const url = pub.publicUrl
 
-          const insImg = await supabase.from('part_images').insert([{
-            part_id: partId,
-            url,
-            sort_order: i,
-          }])
+          const insImg = await supabase.from('part_images').insert([
+            {
+              part_id: partId,
+              url,
+              sort_order: i,
+            },
+          ])
 
           if (insImg.error) throw insImg.error
         }
       }
 
-      // reset part form
       setTitle('')
       setSku('')
       setPartNumber('')
@@ -354,7 +347,11 @@ export default function DonorDetailPage() {
   const setQty = async (p: PartRow, qty: number) => {
     if (busy) return
     const nextListed = normalizeListing(qty, p.is_listed)
-    await updatePart(p.id, { quantity: qty, is_listed: nextListed }, qty <= 0 ? 'Qty set to 0 ✅ (auto-hidden)' : 'Qty updated ✅')
+    await updatePart(
+      p.id,
+      { quantity: qty, is_listed: nextListed },
+      qty <= 0 ? 'Qty set to 0 ✅ (auto-hidden)' : 'Qty updated ✅'
+    )
   }
 
   const soldOut = async (p: PartRow) => {
@@ -392,12 +389,12 @@ export default function DonorDetailPage() {
   }
 
   const totalParts = parts.length
-  const listedInStock = parts.filter(p => p.is_listed && p.quantity > 0).length
-  const outOfStock = parts.filter(p => p.quantity <= 0).length
+  const listedInStock = parts.filter((p) => p.is_listed && p.quantity > 0).length
+  const outOfStock = parts.filter((p) => p.quantity <= 0).length
 
   const visibleParts = useMemo(() => {
     if (showHidden) return parts
-    return parts.filter(p => p.is_listed && p.quantity > 0)
+    return parts.filter((p) => p.is_listed && p.quantity > 0)
   }, [parts, showHidden])
 
   if (loading) return <div className="p-8">Loading…</div>
@@ -424,9 +421,7 @@ export default function DonorDetailPage() {
         />
       )}
 
-      {lightboxUrl && (
-        <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />
-      )}
+      {lightboxUrl && <Lightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
@@ -439,8 +434,12 @@ export default function DonorDetailPage() {
         </div>
 
         <div className="flex gap-3 flex-wrap">
-          <Link className="border rounded px-3 py-2" href="/admin/donor">← Back</Link>
-          <button onClick={load} className="border rounded px-3 py-2" disabled={busy}>Refresh</button>
+          <Link className="border rounded px-3 py-2" href="/admin/donor">
+            ← Back
+          </Link>
+          <button onClick={load} className="border rounded px-3 py-2" disabled={busy}>
+            Refresh
+          </button>
           <button onClick={openDeleteDonor} className="border rounded px-3 py-2 text-red-700" disabled={busy}>
             Delete Donor
           </button>
@@ -468,9 +467,7 @@ export default function DonorDetailPage() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <h2 className="text-xl font-semibold">Donor Photos</h2>
-                <div className="text-xs text-gray-600 mt-1">
-                  Click a photo to zoom. Upload adds to the end.
-                </div>
+                <div className="text-xs text-gray-600 mt-1">Click a photo to zoom. Upload adds to the end.</div>
               </div>
 
               <div className="flex gap-2 flex-wrap">
@@ -523,12 +520,7 @@ export default function DonorDetailPage() {
               <div className="mt-4 grid grid-cols-3 gap-2">
                 {donorImages.map((img) => (
                   <div key={img.id} className="relative border rounded overflow-hidden aspect-square group">
-                    <button
-                      type="button"
-                      className="w-full h-full"
-                      onClick={() => setLightboxUrl(img.url)}
-                      title="Click to zoom"
-                    >
+                    <button type="button" className="w-full h-full" onClick={() => setLightboxUrl(img.url)} title="Click to zoom">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={img.url} alt="donor" className="w-full h-full object-cover" />
                     </button>
@@ -584,9 +576,7 @@ export default function DonorDetailPage() {
                 <div className="flex items-center justify-between gap-3 flex-wrap">
                   <div>
                     <div className="text-sm font-medium">Part Photos</div>
-                    <div className="text-xs text-gray-600">
-                      Choose photos now — they upload after you save the part.
-                    </div>
+                    <div className="text-xs text-gray-600">Choose photos now — they upload after you save the part.</div>
                   </div>
 
                   <label className="border rounded px-3 py-2 cursor-pointer text-sm">
@@ -624,11 +614,7 @@ export default function DonorDetailPage() {
                 )}
               </div>
 
-              <button
-                type="submit"
-                disabled={busy}
-                className="bg-black text-white rounded px-4 py-2 disabled:opacity-60"
-              >
+              <button type="submit" disabled={busy} className="bg-black text-white rounded px-4 py-2 disabled:opacity-60">
                 {busy ? 'Saving…' : 'Add Part (auto-hide if Qty 0)'}
               </button>
             </form>
@@ -646,23 +632,20 @@ export default function DonorDetailPage() {
             </div>
 
             <label className="text-xs text-gray-700 flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showHidden}
-                onChange={(e) => setShowHidden(e.target.checked)}
-              />
+              <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
               Show hidden / out-of-stock
             </label>
           </div>
 
-          {visibleParts.map(p => {
+          {visibleParts.map((p) => {
             const out = p.quantity <= 0
-            const state =
-              out ? { label: 'Out of Stock', cls: 'bg-gray-200 text-gray-800' } :
-              p.is_listed ? { label: 'Listed', cls: 'bg-green-100 text-green-800' } :
-              { label: 'Hidden', cls: 'bg-yellow-100 text-yellow-800' }
+            const state = out
+              ? { label: 'Out of Stock', cls: 'bg-gray-200 text-gray-800' }
+              : p.is_listed
+                ? { label: 'Listed', cls: 'bg-green-100 text-green-800' }
+                : { label: 'Hidden', cls: 'bg-yellow-100 text-yellow-800' }
 
-            const dim = (!p.is_listed || out) ? 'opacity-70' : ''
+            const dim = !p.is_listed || out ? 'opacity-70' : ''
 
             return (
               <div key={p.id} className={`border-t px-4 py-3 text-sm ${dim}`}>
@@ -674,7 +657,9 @@ export default function DonorDetailPage() {
                     </div>
 
                     <div className="text-gray-600 text-xs mt-1 flex items-center gap-2 flex-wrap">
-                      <span>{p.category ?? '—'} • {p.condition ?? '—'}</span>
+                      <span>
+                        {p.category ?? '—'} • {p.condition ?? '—'}
+                      </span>
 
                       <span>•</span>
 
@@ -726,13 +711,20 @@ export default function DonorDetailPage() {
                     </div>
 
                     <div className="text-gray-600 text-xs mt-1">
-                      SKU: <span className="font-mono">{p.sku ?? '—'}</span> • PN: <span className="font-mono">{p.part_number ?? '—'}</span>
+                      SKU: <span className="font-mono">{p.sku ?? '—'}</span> • PN:{' '}
+                      <span className="font-mono">{p.part_number ?? '—'}</span>
                     </div>
 
                     <div className="text-xs mt-2 flex gap-3 flex-wrap">
-                      <Link className="underline" href={`/admin/parts/${p.id}`}>Edit</Link>
-                      <Link className="underline" href={`/admin/parts/${p.id}/photos`}>Photos</Link>
-                      <Link className="underline" href={`/parts/${p.id}`}>Public</Link>
+                      <Link className="underline" href={`/admin/parts/${p.id}`}>
+                        Edit
+                      </Link>
+                      <Link className="underline" href={`/admin/parts/${p.id}/photos`}>
+                        Photos
+                      </Link>
+                      <Link className="underline" href={`/parts/${p.id}`}>
+                        Public
+                      </Link>
 
                       <button className="underline" onClick={() => toggleList(p)} disabled={busy}>
                         {p.is_listed ? 'Unlist' : 'List'}
@@ -750,7 +742,9 @@ export default function DonorDetailPage() {
 
                   <div className="text-right shrink-0">
                     <div className="font-semibold">${Number(p.price).toFixed(2)}</div>
-                    <div className="text-xs text-gray-600 mt-1">{out ? 'Auto-hidden' : (p.is_listed ? 'Visible' : 'Hidden')}</div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      {out ? 'Auto-hidden' : p.is_listed ? 'Visible' : 'Hidden'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -779,10 +773,7 @@ function Lightbox({ url, onClose }: { url: string; onClose: () => void }) {
       <div className="relative max-w-[92vw] max-h-[92vh]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={url} alt="full" className="max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-lg" />
-        <button
-          className="absolute top-3 right-3 bg-white/95 border rounded px-3 py-1 text-sm"
-          onClick={onClose}
-        >
+        <button className="absolute top-3 right-3 bg-white/95 border rounded px-3 py-1 text-sm" onClick={onClose}>
           Close
         </button>
       </div>
@@ -813,12 +804,7 @@ function Field({
   return (
     <div>
       <label className="block text-sm font-medium mb-1">{label}</label>
-      <input
-        className="border rounded p-2 w-full"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-      />
+      <input className="border rounded p-2 w-full" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
     </div>
   )
 }
@@ -860,7 +846,7 @@ function InlineEditText({
         disabled={disabled}
         title="Click to edit"
       >
-        {value?.trim() ? value : (placeholder ?? '—')}
+        {value?.trim() ? value : placeholder ?? '—'}
       </button>
     )
   }
@@ -1069,9 +1055,7 @@ function ConfirmModal({
           </button>
 
           <button
-            className={`rounded px-4 py-2 text-white disabled:opacity-60 ${
-              danger ? 'bg-red-600 hover:bg-red-700' : 'bg-black'
-            }`}
+            className={`rounded px-4 py-2 text-white disabled:opacity-60 ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-black'}`}
             disabled={busy}
             onClick={async () => {
               setBusy(true)
