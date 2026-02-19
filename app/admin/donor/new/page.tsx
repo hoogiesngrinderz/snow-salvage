@@ -7,7 +7,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase'
 export default function NewDonorSledPage() {
   const router = useRouter()
 
-  // ✅ FIX: create the browser Supabase client for this page
+  // ✅ Browser Supabase client
   const supabase = useMemo(() => getSupabaseBrowserClient(), [])
 
   const [loading, setLoading] = useState(false)
@@ -44,8 +44,8 @@ export default function NewDonorSledPage() {
     const u = photoPreviews[idx]
     if (u) URL.revokeObjectURL(u)
 
-    setPhotoFiles((prev) => prev.filter((_, i) => i !== idx))
-    setPhotoPreviews((prev) => prev.filter((_, i) => i !== idx))
+    setPhotoFiles((p) => p.filter((_, i) => i !== idx))
+    setPhotoPreviews((p) => p.filter((_, i) => i !== idx))
   }
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -59,18 +59,28 @@ export default function NewDonorSledPage() {
       const yearRaw = year.trim()
       const milesRaw = miles.trim()
 
-      const yearNum = yearRaw ? Number(yearRaw) : null
-      if (yearRaw && (!Number.isFinite(yearNum) || yearNum < 1900 || yearNum > 2100)) {
-        setMsg('Year must be 1900–2100 (or blank).')
-        setLoading(false)
-        return
+      // ✅ SAFE year parsing
+      let yearNum: number | null = null
+      if (yearRaw) {
+        const n = Number(yearRaw)
+        if (!Number.isFinite(n) || n < 1900 || n > 2100) {
+          setMsg('Year must be 1900–2100 (or blank).')
+          setLoading(false)
+          return
+        }
+        yearNum = n
       }
 
-      const milesNum = milesRaw ? Number(milesRaw) : null
-      if (milesRaw && (!Number.isFinite(milesNum) || milesNum < 0)) {
-        setMsg('Miles must be 0 or more (or blank).')
-        setLoading(false)
-        return
+      // ✅ SAFE miles parsing
+      let milesNum: number | null = null
+      if (milesRaw) {
+        const n = Number(milesRaw)
+        if (!Number.isFinite(n) || n < 0) {
+          setMsg('Miles must be 0 or more (or blank).')
+          setLoading(false)
+          return
+        }
+        milesNum = n
       }
 
       // 1️⃣ Insert donor
@@ -93,7 +103,7 @@ export default function NewDonorSledPage() {
       if (donorErr) throw donorErr
       const donorId = donor.id as string
 
-      // 2️⃣ Upload photos + set cover_url
+      // 2️⃣ Upload photos
       let coverUrl: string | null = null
 
       for (let i = 0; i < photoFiles.length; i++) {
@@ -101,31 +111,40 @@ export default function NewDonorSledPage() {
         const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
         const path = `donors/${donorId}/${donorId}-${String(i + 1).padStart(2, '0')}.${ext}`
 
-        const up = await supabase.storage.from('donor-images').upload(path, file, { upsert: true })
+        const up = await supabase.storage
+          .from('donor-images')
+          .upload(path, file, { upsert: true })
+
         if (up.error) throw up.error
 
-        const { data: pub } = supabase.storage.from('donor-images').getPublicUrl(path)
+        const { data: pub } = supabase.storage
+          .from('donor-images')
+          .getPublicUrl(path)
+
         const url = pub.publicUrl
         if (!coverUrl) coverUrl = url
 
-        const { error: imgErr } = await supabase.from('donor_images').insert([
-          {
-            donor_sled_id: donorId,
-            url,
-            sort_order: i,
-          },
-        ])
+        const { error: imgErr } = await supabase
+          .from('donor_images')
+          .insert([
+            {
+              donor_sled_id: donorId,
+              url,
+              sort_order: i,
+            },
+          ])
+
         if (imgErr) throw imgErr
       }
 
-      // 3️⃣ Save cover_url
+      // 3️⃣ Save cover image
       if (coverUrl) {
-        const { error: coverErr } = await supabase
+        const { error } = await supabase
           .from('donor_sleds')
           .update({ cover_url: coverUrl })
           .eq('id', donorId)
 
-        if (coverErr) throw coverErr
+        if (error) throw error
       }
 
       // 4️⃣ Redirect
@@ -133,14 +152,15 @@ export default function NewDonorSledPage() {
     } catch (err: any) {
       setMsg(`Error: ${err?.message ?? String(err)}`)
       setLoading(false)
-      return
     }
   }
 
   return (
     <div className="p-8 max-w-2xl">
       <h1 className="text-3xl font-bold">Add Donor Sled</h1>
-      <p className="text-sm text-gray-600 mt-1">Create a donor sled record before adding parts.</p>
+      <p className="text-sm text-gray-600 mt-1">
+        Create a donor sled record before adding parts.
+      </p>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -204,7 +224,11 @@ export default function NewDonorSledPage() {
           />
         </div>
 
-        <button type="submit" disabled={loading} className="bg-black text-white rounded px-4 py-2 disabled:opacity-60">
+        <button
+          type="submit"
+          disabled={loading}
+          className="bg-black text-white rounded px-4 py-2 disabled:opacity-60"
+        >
           {loading ? 'Saving…' : 'Save Donor Sled'}
         </button>
 
@@ -226,7 +250,11 @@ function Field({
   return (
     <div>
       <label className="block text-sm font-medium mb-1">{label}</label>
-      <input className="border rounded p-2 w-full" value={value} onChange={(e) => onChange(e.target.value)} />
+      <input
+        className="border rounded p-2 w-full"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   )
 }
