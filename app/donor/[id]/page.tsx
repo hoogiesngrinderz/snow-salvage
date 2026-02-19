@@ -54,7 +54,6 @@ const res = await (supabase as any)
   .order('created_at', { ascending: true })
   .limit(50)
 
-
       if (res.error) return null
       const row = res.data?.[0] as any
       if (!row) return null
