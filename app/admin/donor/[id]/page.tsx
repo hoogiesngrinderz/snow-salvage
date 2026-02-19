@@ -36,7 +36,7 @@ type DonorImage = {
   id: string
   donor_sled_id: string
   url: string
-  path?: string | null // <-- optional if you added the column
+  path?: string | null
   sort_order: number
   created_at: string
 }
@@ -48,6 +48,14 @@ type ConfirmModalState = null | {
   danger?: boolean
   onConfirm: () => Promise<void>
 }
+
+/**
+ * DROP-IN FILE
+ * Save as: app/admin/donor/[id]/page.tsx
+ *
+ * Fix included:
+ * - Year validation no longer uses a possibly-null value in numeric comparisons (Vercel build fix).
+ */
 
 export default function DonorDetailPage() {
   const params = useParams<{ id: string }>()
@@ -92,12 +100,7 @@ export default function DonorDetailPage() {
     setLoading(true)
     setMsg(null)
 
-    const donorRes = await supabase
-      .from('donor_sleds')
-      .select('*')
-      .eq('id', donorId)
-      .single()
-
+    const donorRes = await supabase.from('donor_sleds').select('*').eq('id', donorId).single()
     if (!donorRes.error) setDonor(donorRes.data as DonorSled)
 
     const partsRes = await supabase
@@ -176,7 +179,7 @@ export default function DonorDetailPage() {
   const updatePart = async (partId: string, patch: Partial<PartRow>, successMsg?: string) => {
     setMsg(null)
     setBusy(true)
-    setParts(prev => prev.map(p => (p.id === partId ? { ...p, ...patch } : p)))
+    setParts((prev) => prev.map((p) => (p.id === partId ? { ...p, ...patch } : p)))
 
     try {
       const dbPatch: any = {}
@@ -201,9 +204,9 @@ export default function DonorDetailPage() {
   const onPickPhotos = (files: FileList | null) => {
     if (!files || files.length === 0) return
     photoPreviews.forEach((u) => URL.revokeObjectURL(u))
-    const arr = Array.from(files).filter(f => f.type.startsWith('image/'))
+    const arr = Array.from(files).filter((f) => f.type.startsWith('image/'))
     setPhotoFiles(arr)
-    setPhotoPreviews(arr.map(f => URL.createObjectURL(f)))
+    setPhotoPreviews(arr.map((f) => URL.createObjectURL(f)))
   }
 
   const removePhotoAt = (idx: number) => {
@@ -216,9 +219,9 @@ export default function DonorDetailPage() {
   const onPickDonorPhotos = (files: FileList | null) => {
     if (!files || files.length === 0) return
     donorPhotoPreviews.forEach((u) => URL.revokeObjectURL(u))
-    const arr = Array.from(files).filter(f => f.type.startsWith('image/'))
+    const arr = Array.from(files).filter((f) => f.type.startsWith('image/'))
     setDonorPhotoFiles(arr)
-    setDonorPhotoPreviews(arr.map(f => URL.createObjectURL(f)))
+    setDonorPhotoPreviews(arr.map((f) => URL.createObjectURL(f)))
   }
 
   const removeDonorPhotoAt = (idx: number) => {
@@ -239,7 +242,7 @@ export default function DonorDetailPage() {
     setMsg(null)
 
     try {
-      const base = donorImages.length ? Math.max(...donorImages.map(i => i.sort_order ?? 0)) + 1 : 0
+      const base = donorImages.length ? Math.max(...donorImages.map((i) => i.sort_order ?? 0)) + 1 : 0
 
       for (let i = 0; i < donorPhotoFiles.length; i++) {
         const file = donorPhotoFiles[i]
@@ -252,13 +255,9 @@ export default function DonorDetailPage() {
         const { data: pub } = supabase.storage.from('donor-images').getPublicUrl(path)
         const url = pub.publicUrl
 
-        // NOTE: includes path if you added the column
-        const ins = await supabase.from('donor_images').insert([{
-          donor_sled_id: donorId,
-          url,
-          path,
-          sort_order: base + i,
-        }])
+        const ins = await supabase
+          .from('donor_images')
+          .insert([{ donor_sled_id: donorId, url, path, sort_order: base + i }])
 
         if (ins.error) throw ins.error
       }
@@ -283,7 +282,6 @@ export default function DonorDetailPage() {
       actionLabel: 'DELETE',
       danger: true,
       onConfirm: async () => {
-        // delete storage object if we have path
         if (img.path) {
           const { error: rmErr } = await supabase.storage.from('donor-images').remove([img.path])
           if (rmErr) throw rmErr
@@ -322,14 +320,8 @@ export default function DonorDetailPage() {
         is_listed: normalizeListing(qty, listed),
       }
 
-      const partInsert = await supabase
-        .from('parts')
-        .insert([payload])
-        .select('id')
-        .single()
-
+      const partInsert = await supabase.from('parts').insert([payload]).select('id').single()
       if (partInsert.error) throw partInsert.error
-
       const partId = partInsert.data.id as string
 
       if (photoFiles.length > 0) {
@@ -344,19 +336,14 @@ export default function DonorDetailPage() {
           const { data: pub } = supabase.storage.from('part-images').getPublicUrl(path)
           const url = pub.publicUrl
 
-          // includes path if you added column
-          const insImg = await supabase.from('part_images').insert([{
-            part_id: partId,
-            url,
-            path,
-            sort_order: i,
-          }])
+          const insImg = await supabase
+            .from('part_images')
+            .insert([{ part_id: partId, url, path, sort_order: i }])
 
           if (insImg.error) throw insImg.error
         }
       }
 
-      // reset form
       setTitle('')
       setSku('')
       setPartNumber('')
@@ -392,7 +379,11 @@ export default function DonorDetailPage() {
   const setQty = async (p: PartRow, qty: number) => {
     if (busy) return
     const nextListed = normalizeListing(qty, p.is_listed)
-    await updatePart(p.id, { quantity: qty, is_listed: nextListed }, qty <= 0 ? 'Qty set to 0 ✅ (auto-hidden)' : 'Qty updated ✅')
+    await updatePart(
+      p.id,
+      { quantity: qty, is_listed: nextListed },
+      qty <= 0 ? 'Qty set to 0 ✅ (auto-hidden)' : 'Qty updated ✅'
+    )
   }
 
   const soldOut = async (p: PartRow) => {
@@ -400,7 +391,7 @@ export default function DonorDetailPage() {
     await updatePart(p.id, { quantity: 0, is_listed: false }, 'Marked sold out ✅ (qty 0, unlisted)')
   }
 
-  // ---------- Delete donor (DB + storage cleanup) ----------
+  // ---------- Delete donor ----------
   const openDeleteDonor = () => {
     setModal({
       title: 'Delete donor sled?',
@@ -408,23 +399,15 @@ export default function DonorDetailPage() {
       actionLabel: 'DELETE',
       danger: true,
       onConfirm: async () => {
-        // 1) Attempt storage cleanup (only possible if we stored paths)
-        const donorPaths = donorImages.map(i => i.path).filter(Boolean) as string[]
+        const donorPaths = donorImages.map((i) => i.path).filter(Boolean) as string[]
         if (donorPaths.length) {
           const { error } = await supabase.storage.from('donor-images').remove(donorPaths)
           if (error) throw error
         }
 
-        // Remove part images too (by joining part_images -> parts)
-        // (We do this with a couple queries so it works in the browser)
-        const partIds = parts.map(p => p.id)
+        const partIds = parts.map((p) => p.id)
         if (partIds.length) {
-          const { data: imgs, error: imgErr } = await supabase
-            .from('part_images')
-            .select('path')
-            .in('part_id', partIds)
-            .limit(5000)
-
+          const { data: imgs, error: imgErr } = await supabase.from('part_images').select('path').in('part_id', partIds).limit(5000)
           if (imgErr) throw imgErr
 
           const partPaths = (imgs ?? []).map((r: any) => r.path).filter(Boolean) as string[]
@@ -434,7 +417,6 @@ export default function DonorDetailPage() {
           }
         }
 
-        // 2) DB delete donor (should cascade parts/images if FKs are set)
         const { error } = await supabase.from('donor_sleds').delete().eq('id', donorId)
         if (error) throw error
 
@@ -459,12 +441,12 @@ export default function DonorDetailPage() {
   }
 
   const totalParts = parts.length
-  const listedInStock = parts.filter(p => p.is_listed && p.quantity > 0).length
-  const outOfStock = parts.filter(p => p.quantity <= 0).length
+  const listedInStock = parts.filter((p) => p.is_listed && p.quantity > 0).length
+  const outOfStock = parts.filter((p) => p.quantity <= 0).length
 
   const visibleParts = useMemo(() => {
     if (showHidden) return parts
-    return parts.filter(p => p.is_listed && p.quantity > 0)
+    return parts.filter((p) => p.is_listed && p.quantity > 0)
   }, [parts, showHidden])
 
   if (loading) return <div className="p-8">Loading…</div>
@@ -504,8 +486,12 @@ export default function DonorDetailPage() {
         </div>
 
         <div className="flex gap-3 flex-wrap">
-          <Link className="border rounded px-3 py-2" href="/admin/donor">← Back</Link>
-          <button onClick={load} className="border rounded px-3 py-2" disabled={busy}>Refresh</button>
+          <Link className="border rounded px-3 py-2" href="/admin/donor">
+            ← Back
+          </Link>
+          <button onClick={load} className="border rounded px-3 py-2" disabled={busy}>
+            Refresh
+          </button>
           <button onClick={openDeleteDonor} className="border rounded px-3 py-2 text-red-700" disabled={busy}>
             Delete Donor
           </button>
@@ -514,7 +500,7 @@ export default function DonorDetailPage() {
 
       {msg && <div className="mt-4 text-sm">{msg}</div>}
 
-      {/* ✅ Donor editable fields */}
+      {/* Donor editable fields */}
       <div className="mt-6 border rounded p-5">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
@@ -524,41 +510,87 @@ export default function DonorDetailPage() {
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-          <Editable label="Year" value={donor.year ?? ''} mono onCommit={async (v) => {
-const n = v.trim() ? Number(v) : null
+          {/* ✅ FIXED YEAR BLOCK (no nullable numeric comparisons) */}
+          <Editable
+            label="Year"
+            value={donor.year ?? ''}
+            mono
+            onCommit={async (v) => {
+              const raw = v.trim()
 
-// validate only if a value was entered
-if (n !== null && (!Number.isFinite(n) || n < 1900 || n > 2100)) {
-  setMsg('Year must be 1900–2100')
-  return
-}
+              if (!raw) {
+                await updateDonor({ year: null }, 'Year cleared ✅')
+                return
+              }
 
-await updateDonor({ year: n }, 'Year updated ✅')
+              const yearNum = Number(raw)
 
-          }} disabled={busy} />
+              if (!Number.isFinite(yearNum) || yearNum < 1900 || yearNum > 2100) {
+                setMsg('Year must be 1900–2100')
+                return
+              }
 
-          <Editable label="Make" value={donor.make ?? ''} onCommit={async (v) => {
-            await updateDonor({ make: v.trim() || null }, 'Make updated ✅')
-          }} disabled={busy} />
+              await updateDonor({ year: yearNum }, 'Year updated ✅')
+            }}
+            disabled={busy}
+          />
 
-          <Editable label="Model" value={donor.model ?? ''} onCommit={async (v) => {
-            await updateDonor({ model: v.trim() || null }, 'Model updated ✅')
-          }} disabled={busy} />
+          <Editable
+            label="Make"
+            value={donor.make ?? ''}
+            onCommit={async (v) => {
+              await updateDonor({ make: v.trim() || null }, 'Make updated ✅')
+            }}
+            disabled={busy}
+          />
 
-          <Editable label="VIN" value={donor.vin ?? ''} mono onCommit={async (v) => {
-            await updateDonor({ vin: v.trim() || null }, 'VIN updated ✅')
-          }} disabled={busy} />
+          <Editable
+            label="Model"
+            value={donor.model ?? ''}
+            onCommit={async (v) => {
+              await updateDonor({ model: v.trim() || null }, 'Model updated ✅')
+            }}
+            disabled={busy}
+          />
 
-          <Editable label="Engine" value={donor.engine ?? ''} onCommit={async (v) => {
-            await updateDonor({ engine: v.trim() || null }, 'Engine updated ✅')
-          }} disabled={busy} />
+          <Editable
+            label="VIN"
+            value={donor.vin ?? ''}
+            mono
+            onCommit={async (v) => {
+              await updateDonor({ vin: v.trim() || null }, 'VIN updated ✅')
+            }}
+            disabled={busy}
+          />
 
-          <Editable label="Miles" value={donor.miles?.toString() ?? ''} mono onCommit={async (v) => {
-            const t = v.trim()
-            const n = t ? Number(t) : null
-            if (t && (!Number.isFinite(n) || n < 0)) { setMsg('Miles must be 0 or more'); return }
-            await updateDonor({ miles: n }, 'Miles updated ✅')
-          }} disabled={busy} />
+          <Editable
+            label="Engine"
+            value={donor.engine ?? ''}
+            onCommit={async (v) => {
+              await updateDonor({ engine: v.trim() || null }, 'Engine updated ✅')
+            }}
+            disabled={busy}
+          />
+
+          <Editable
+            label="Miles"
+            value={donor.miles?.toString() ?? ''}
+            mono
+            onCommit={async (v) => {
+              const raw = v.trim()
+              if (!raw) {
+                await updateDonor({ miles: null }, 'Miles cleared ✅')
+                return
+              }
+              const milesNum = Number(raw)
+              if (!Number.isFinite(milesNum) || milesNum < 0) {
+                setMsg('Miles must be 0 or more')
+                return
+              }
+              await updateDonor({ miles: milesNum }, 'Miles updated ✅')
+            }}
+            disabled={busy}
+          />
         </div>
       </div>
 
@@ -651,7 +683,7 @@ await updateDonor({ year: n }, 'Year updated ✅')
             )}
           </div>
 
-          {/* Add part + photos (kept from your current page) */}
+          {/* Add Part */}
           <div className="border rounded p-5">
             <h2 className="text-xl font-semibold">Add Part</h2>
 
@@ -729,7 +761,7 @@ await updateDonor({ year: n }, 'Year updated ✅')
           </div>
         </div>
 
-        {/* RIGHT: parts list (unchanged) */}
+        {/* RIGHT: parts list */}
         <div className="border rounded overflow-hidden">
           <div className="bg-gray-50 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
             <div>
@@ -745,14 +777,15 @@ await updateDonor({ year: n }, 'Year updated ✅')
             </label>
           </div>
 
-          {visibleParts.map(p => {
+          {visibleParts.map((p) => {
             const out = p.quantity <= 0
-            const state =
-              out ? { label: 'Out of Stock', cls: 'bg-gray-200 text-gray-800' } :
-              p.is_listed ? { label: 'Listed', cls: 'bg-green-100 text-green-800' } :
-              { label: 'Hidden', cls: 'bg-yellow-100 text-yellow-800' }
+            const state = out
+              ? { label: 'Out of Stock', cls: 'bg-gray-200 text-gray-800' }
+              : p.is_listed
+                ? { label: 'Listed', cls: 'bg-green-100 text-green-800' }
+                : { label: 'Hidden', cls: 'bg-yellow-100 text-yellow-800' }
 
-            const dim = (!p.is_listed || out) ? 'opacity-70' : ''
+            const dim = !p.is_listed || out ? 'opacity-70' : ''
 
             return (
               <div key={p.id} className={`border-t px-4 py-3 text-sm ${dim}`}>
@@ -768,13 +801,20 @@ await updateDonor({ year: n }, 'Year updated ✅')
                     </div>
 
                     <div className="text-gray-600 text-xs mt-1">
-                      SKU: <span className="font-mono">{p.sku ?? '—'}</span> • PN: <span className="font-mono">{p.part_number ?? '—'}</span>
+                      SKU: <span className="font-mono">{p.sku ?? '—'}</span> • PN:{' '}
+                      <span className="font-mono">{p.part_number ?? '—'}</span>
                     </div>
 
                     <div className="text-xs mt-2 flex gap-3 flex-wrap">
-                      <Link className="underline" href={`/admin/parts/${p.id}`}>Edit</Link>
-                      <Link className="underline" href={`/admin/parts/${p.id}/photos`}>Photos</Link>
-                      <Link className="underline" href={`/parts/${p.id}`}>Public</Link>
+                      <Link className="underline" href={`/admin/parts/${p.id}`}>
+                        Edit
+                      </Link>
+                      <Link className="underline" href={`/admin/parts/${p.id}/photos`}>
+                        Photos
+                      </Link>
+                      <Link className="underline" href={`/parts/${p.id}`}>
+                        Public
+                      </Link>
 
                       <button className="underline" onClick={() => toggleList(p)} disabled={busy}>
                         {p.is_listed ? 'Unlist' : 'List'}
@@ -800,9 +840,7 @@ await updateDonor({ year: n }, 'Year updated ✅')
 
                   <div className="text-right shrink-0">
                     <div className="font-semibold">${Number(p.price).toFixed(2)}</div>
-                    <div className="text-xs text-gray-600 mt-1">
-                      {out ? 'Auto-hidden' : (p.is_listed ? 'Visible' : 'Hidden')}
-                    </div>
+                    <div className="text-xs text-gray-600 mt-1">{out ? 'Auto-hidden' : p.is_listed ? 'Visible' : 'Hidden'}</div>
                   </div>
                 </div>
               </div>
@@ -859,9 +897,7 @@ function Editable({
       {!editing ? (
         <button
           type="button"
-          className={`mt-1 w-full text-left rounded border px-2 py-1 bg-white hover:bg-gray-50 ${
-            mono ? 'font-mono' : ''
-          }`}
+          className={`mt-1 w-full text-left rounded border px-2 py-1 bg-white hover:bg-gray-50 ${mono ? 'font-mono' : ''}`}
           onClick={() => !disabled && setEditing(true)}
           disabled={disabled}
           title="Click to edit"
