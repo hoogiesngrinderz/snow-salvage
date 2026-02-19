@@ -525,9 +525,16 @@ export default function DonorDetailPage() {
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
           <Editable label="Year" value={donor.year ?? ''} mono onCommit={async (v) => {
-            const n = v.trim() ? Number(v) : null
-            if (v.trim() && (!Number.isFinite(n) || n < 1900 || n > 2100)) { setMsg('Year must be 1900–2100'); return }
-            await updateDonor({ year: n }, 'Year updated ✅')
+const n = v.trim() ? Number(v) : null
+
+// validate only if a value was entered
+if (n !== null && (!Number.isFinite(n) || n < 1900 || n > 2100)) {
+  setMsg('Year must be 1900–2100')
+  return
+}
+
+await updateDonor({ year: n }, 'Year updated ✅')
+
           }} disabled={busy} />
 
           <Editable label="Make" value={donor.make ?? ''} onCommit={async (v) => {
