@@ -1,10 +1,25 @@
 'use client'
 
+/**
+ * DROP-IN FILE
+ * Save as: app/donor/[id]/parts.tsx
+ *
+ * Uses browser client only:
+ * - getSupabaseBrowserClient() from '@/lib/supabase'
+ *
+ * Notes:
+ * - Fixes the build error by NOT using `await` directly inside `useEffect`.
+ * - Avoids “excessively deep” TS errors by NOT dynamically querying unknown tables/columns.
+ * - Loads donor cover photo from `donor_images` where `donor_sled_id = donorId`
+ *   and supports either:
+ *     - donor_images.url (public URL), or
+ *     - donor_images.path (storage path in bucket `donor-images`, public or signed)
+ */
+
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase'
-
 
 type DonorSled = {
   id: string
@@ -29,7 +44,14 @@ type PartRow = {
   created_at: string
 }
 
-export default function PublicDonorPage() {
+type DonorImageRow = {
+  url: string | null
+  path: string | null
+  sort_order: number | null
+  created_at: string
+}
+
+export default function PublicDonorPartsPage() {
   const params = useParams<{ id: string }>()
   const donorId = params.id
 
@@ -43,85 +65,47 @@ export default function PublicDonorPage() {
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<'new' | 'price_asc' | 'price_desc'>('new')
 
-  // ---- Photo loader (tries multiple table/column combos + supports private bucket signed URL) ----
-  const loadDonorPhoto = async () => {
-    // helper to try a table + foreign key column
-    const tryTable = async (table: string, fkCol: string) => {
-const res = await (supabase as any)
-  .from(table)
-  .select('url, path, sort_order, created_at')
-  .eq(fkCol, donorId)
-  .order('sort_order', { ascending: true })
-  .order('created_at', { ascending: true })
-  .limit(50)
+  const loadDonorPhoto = async (supabase: ReturnType<typeof getSupabaseBrowserClient>) => {
+    const res = await supabase
+      .from('donor_images')
+      .select('url, path, sort_order, created_at')
+      .eq('donor_sled_id', donorId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(1)
 
-      if (res.error) return null
-      const row = res.data?.[0] as any
-      if (!row) return null
+    if (res.error) return null
+    const row = (res.data?.[0] ?? null) as DonorImageRow | null
+    if (!row) return null
 
-      // If DB stores url, use it
-      if (row.url && String(row.url).trim()) return String(row.url)
+    if (row.url && row.url.trim()) return row.url.trim()
 
-      // If DB stores a storage path, try to generate public or signed url
-      if (row.path && String(row.path).trim()) {
-        const path = String(row.path)
+    if (row.path && row.path.trim()) {
+      const path = row.path.trim()
 
-        // public url (works if bucket is public)
-        try {
-          const { data: pub } = supabase.storage.from('donor-images').getPublicUrl(path)
-          if (pub?.publicUrl) return pub.publicUrl
-        } catch {}
-
-        // signed url (works if bucket is private and policy allows)
-        try {
-          const { data: signed, error: signErr } = await supabase.storage
-            .from('donor-images')
-            .createSignedUrl(path, 60 * 60) // 1 hour
-          if (!signErr && signed?.signedUrl) return signed.signedUrl
-        } catch {}
-      }
-
-      return null
-    }
-
-    // Try the most common schemas:
-    // - donor_images with donor_id
-    // - donor_images with donor_sled_id
-    // - donor_sled_images with donor_id
-    // - donor_sled_images with donor_sled_id
-    // - donor_photos with donor_id / donor_sled_id
-    const candidates: Array<[string, string]> = [
-      ['donor_images', 'donor_id'],
-      ['donor_images', 'donor_sled_id'],
-      ['donor_sled_images', 'donor_id'],
-      ['donor_sled_images', 'donor_sled_id'],
-      ['donor_photos', 'donor_id'],
-      ['donor_photos', 'donor_sled_id'],
-    ]
-
-    for (const [table, fk] of candidates) {
+      // public url (public bucket)
       try {
-        const url = await tryTable(table, fk)
-        if (url) return url
-      } catch {
-        // ignore missing table errors
-      }
-    }
+        const { data: pub } = supabase.storage.from('donor-images').getPublicUrl(path)
+        if (pub?.publicUrl) return pub.publicUrl
+      } catch {}
 
-    // Optional fallback: if your storage paths follow a convention and you DIDN'T store rows in a table,
-    // you can uncomment this block and adjust it to your actual path pattern.
-    //
-    // const guessPath = `donors/${donorId}/${donorId}-01.jpg`
-    // const { data: pub } = supabase.storage.from('donor-images').getPublicUrl(guessPath)
-    // if (pub?.publicUrl) return pub.publicUrl
+      // signed url (private bucket)
+      try {
+        const { data: signed, error: signErr } = await supabase.storage
+          .from('donor-images')
+          .createSignedUrl(path, 60 * 60) // 1 hour
+        if (!signErr && signed?.signedUrl) return signed.signedUrl
+      } catch {}
+    }
 
     return null
   }
 
-  const load = async () => {
+  const load = async (supabase: ReturnType<typeof getSupabaseBrowserClient>) => {
     setLoading(true)
     setMsg(null)
 
+    // donor
     const donorRes = await supabase
       .from('donor_sleds')
       .select('*')
@@ -139,8 +123,8 @@ const res = await (supabase as any)
 
     setDonor(donorRes.data as DonorSled)
 
-    // photo (robust)
-    const url = await loadDonorPhoto()
+    // photo
+    const url = await loadDonorPhoto(supabase)
     setPhotoUrl(url)
 
     // parts: ONLY listed + in stock
@@ -166,9 +150,10 @@ const res = await (supabase as any)
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient()
-    const { data, error } = await supabase.from('parts')
-
-    load()
+    const run = async () => {
+      await load(supabase)
+    }
+    run()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [donorId])
 
@@ -244,7 +229,14 @@ const res = await (supabase as any)
             <div className="aspect-[16/10] bg-gray-100">
               {photoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={photoUrl} alt="Donor sled photo" className="w-full h-full object-cover" />
+                <img
+                  src={photoUrl}
+                  alt="Donor sled photo"
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={() => setPhotoUrl(null)}
+                />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-sm text-gray-600">
                   No photo
@@ -253,7 +245,14 @@ const res = await (supabase as any)
             </div>
             <div className="p-3 text-xs text-gray-600 flex items-center justify-between">
               <span>{parts.length} parts in stock</span>
-              <button className="underline hover:text-gray-900" onClick={load} title="Refresh">
+              <button
+                className="underline hover:text-gray-900"
+                onClick={() => {
+                  const supabase = getSupabaseBrowserClient()
+                  load(supabase)
+                }}
+                title="Refresh"
+              >
                 Refresh
               </button>
             </div>
@@ -278,7 +277,11 @@ const res = await (supabase as any)
               onChange={(e) => setQ(e.target.value)}
             />
 
-            <select className="border rounded px-3 py-2 text-sm bg-white" value={sort} onChange={(e) => setSort(e.target.value as any)}>
+            <select
+              className="border rounded px-3 py-2 text-sm bg-white"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as any)}
+            >
               <option value="new">Newest</option>
               <option value="price_asc">Price: Low → High</option>
               <option value="price_desc">Price: High → Low</option>
@@ -291,7 +294,12 @@ const res = await (supabase as any)
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
             {filtered.map((p) => (
-              <Link key={p.id} href={`/parts/${p.id}`} className="border rounded-lg p-4 hover:shadow-sm transition" title="Open part">
+              <Link
+                key={p.id}
+                href={`/parts/${p.id}`}
+                className="border rounded-lg p-4 hover:shadow-sm transition"
+                title="Open part"
+              >
                 <div className="text-xs text-gray-600">
                   {p.category ?? '—'} • {p.condition ?? '—'}
                 </div>
