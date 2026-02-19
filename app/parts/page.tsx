@@ -88,7 +88,7 @@ export default function PartsBrowsePage() {
 
       const { data, error } = await query
 
-      if (!error && data) setRows(data as PartRow[])
+      if (!error && data) setRows(data as unknown as PartRow[])
       else setRows([])
 
       setLoading(false)
