@@ -165,6 +165,7 @@ const res = await (supabase as any)
   }
 
   useEffect(() => {
+    const supabase = getSupabaseBrowserClient()
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [donorId])
