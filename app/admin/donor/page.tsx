@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { getSupabaseBrowserClient } from '@/lib/supabase'
 
-
 type DonorSled = {
   id: string
   vin: string | null
@@ -17,6 +16,9 @@ type DonorSled = {
 }
 
 export default function DonorListPage() {
+  // ✅ FIX: define supabase for this page
+  const supabase = useMemo(() => getSupabaseBrowserClient(), [])
+
   const [rows, setRows] = useState<DonorSled[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
@@ -44,12 +46,13 @@ export default function DonorListPage() {
 
   useEffect(() => {
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
     if (!s) return rows
-    return rows.filter(r => {
+    return rows.filter((r) => {
       const blob = [r.vin, r.make, r.model, r.engine, r.year?.toString(), r.miles?.toString()]
         .filter(Boolean)
         .join(' ')
@@ -90,7 +93,9 @@ export default function DonorListPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <span className="text-sm text-gray-600">{filtered.length} / {rows.length}</span>
+        <span className="text-sm text-gray-600">
+          {filtered.length} / {rows.length}
+        </span>
       </div>
 
       <div className="mt-6 border rounded overflow-hidden">
@@ -102,10 +107,12 @@ export default function DonorListPage() {
           <div className="col-span-1 text-right">Open</div>
         </div>
 
-        {filtered.map(r => (
+        {filtered.map((r) => (
           <div key={r.id} className="grid grid-cols-12 px-3 py-3 border-t text-sm items-center">
             <div className="col-span-4">
-              <div className="font-medium">{r.year ?? '—'} {r.make ?? ''} {r.model ?? ''}</div>
+              <div className="font-medium">
+                {r.year ?? '—'} {r.make ?? ''} {r.model ?? ''}
+              </div>
               <div className="text-xs text-gray-600">Added {new Date(r.created_at).toLocaleString()}</div>
             </div>
 
@@ -114,17 +121,17 @@ export default function DonorListPage() {
             </div>
 
             <div className="col-span-2">{r.engine ?? '—'}</div>
-            <div className="col-span-2">{r.miles ?? '—'}</div>
+            <div className="col-span-2">{typeof r.miles === 'number' ? r.miles.toLocaleString() : '—'}</div>
 
             <div className="col-span-1 text-right">
-              <Link className="underline" href={`/admin/donor/${r.id}`}>View</Link>
+              <Link className="underline" href={`/admin/donor/${r.id}`}>
+                View
+              </Link>
             </div>
           </div>
         ))}
 
-        {!loading && filtered.length === 0 && (
-          <div className="p-6 text-sm text-gray-600">No donors found.</div>
-        )}
+        {!loading && filtered.length === 0 && <div className="p-6 text-sm text-gray-600">No donors found.</div>}
       </div>
     </div>
   )
