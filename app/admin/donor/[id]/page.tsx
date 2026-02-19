@@ -522,9 +522,7 @@ export default function DonorDetailPage() {
                 await updateDonor({ year: null }, 'Year cleared ✅')
                 return
               }
-
               const yearNum = Number(raw)
-
               if (!Number.isFinite(yearNum) || yearNum < 1900 || yearNum > 2100) {
                 setMsg('Year must be 1900–2100')
                 return
