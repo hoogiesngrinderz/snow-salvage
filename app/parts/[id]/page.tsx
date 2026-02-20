@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase'
-
 
 type PartRow = {
   id: string
@@ -27,12 +26,17 @@ export default function PartDetailPage() {
   const params = useParams<{ id: string }>()
   const id = params.id
 
+  // ✅ FIX: create the browser Supabase client for this page
+  const supabase = useMemo(() => getSupabaseBrowserClient(), [])
+
   const [p, setP] = useState<PartRow | null>(null)
   const [imgs, setImgs] = useState<ImgRow[]>([])
   const [active, setActive] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!id) return
+
     const load = async () => {
       setLoading(true)
 
@@ -51,6 +55,7 @@ export default function PartDetailPage() {
       const [partRes, imgRes] = await Promise.all([partReq, imgReq])
 
       if (!partRes.error) setP(partRes.data as PartRow)
+      else setP(null)
 
       if (!imgRes.error && imgRes.data) {
         const arr = imgRes.data as ImgRow[]
@@ -65,7 +70,7 @@ export default function PartDetailPage() {
     }
 
     load()
-  }, [id])
+  }, [id, supabase])
 
   if (loading) return <div className="p-8">Loading…</div>
   if (!p) return <div className="p-8">Not found.</div>
@@ -74,7 +79,9 @@ export default function PartDetailPage() {
 
   return (
     <div className="p-8 max-w-4xl">
-      <Link className="underline text-sm" href="/parts">← Back to parts</Link>
+      <Link className="underline text-sm" href="/parts">
+        ← Back to parts
+      </Link>
 
       <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Photo gallery */}
@@ -92,10 +99,12 @@ export default function PartDetailPage() {
 
           {imgs.length > 1 && (
             <div className="grid grid-cols-5 gap-2">
-              {imgs.slice(0, 10).map(im => (
+              {imgs.slice(0, 10).map((im) => (
                 <button
                   key={im.id}
-                  className={`border rounded overflow-hidden aspect-square ${active === im.url ? 'ring-2 ring-black' : ''}`}
+                  className={`border rounded overflow-hidden aspect-square ${
+                    active === im.url ? 'ring-2 ring-black' : ''
+                  }`}
                   onClick={() => setActive(im.url)}
                   type="button"
                 >
@@ -115,9 +124,7 @@ export default function PartDetailPage() {
 
           <h1 className="mt-1 text-3xl font-bold">{p.title}</h1>
 
-          <div className="mt-4 text-3xl font-extrabold">
-            ${Number(p.price).toFixed(2)}
-          </div>
+          <div className="mt-4 text-3xl font-extrabold">${Number(p.price).toFixed(2)}</div>
 
           <div className="mt-2 text-sm">
             {inStock ? (
@@ -130,17 +137,16 @@ export default function PartDetailPage() {
 
           <div className="mt-6 flex gap-3 flex-wrap">
             <button
-              className={`rounded px-5 py-3 text-white ${inStock ? 'bg-black' : 'bg-gray-400 cursor-not-allowed'}`}
+              className={`rounded px-5 py-3 text-white ${
+                inStock ? 'bg-black' : 'bg-gray-400 cursor-not-allowed'
+              }`}
               disabled={!inStock}
               title="Next step: Stripe checkout"
             >
               Buy Now (next)
             </button>
 
-            <button
-              className="border rounded px-5 py-3"
-              title="Next step: request form"
-            >
+            <button className="border rounded px-5 py-3" title="Next step: request form">
               Request this part (next)
             </button>
           </div>
