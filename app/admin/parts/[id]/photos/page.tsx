@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase'
 
-
 type ImgRow = {
   id: string
   part_id: string
@@ -17,6 +16,9 @@ type ImgRow = {
 export default function PartPhotosPage() {
   const params = useParams<{ id: string }>()
   const partId = params.id
+
+  // ✅ FIX: define supabase in this client component
+  const supabase = useMemo(() => getSupabaseBrowserClient(), [])
 
   const [rows, setRows] = useState<ImgRow[]>([])
   const [busy, setBusy] = useState(false)
@@ -39,7 +41,7 @@ export default function PartPhotosPage() {
   }, [partId])
 
   const nextSort = useMemo(() => {
-    return rows.length ? Math.max(...rows.map(r => r.sort_order)) + 1 : 0
+    return rows.length ? Math.max(...rows.map((r) => r.sort_order)) + 1 : 0
   }, [rows])
 
   const onUpload = async (files: FileList | null) => {
@@ -55,24 +57,19 @@ export default function PartPhotosPage() {
         const ext = file.name.split('.').pop() || 'jpg'
         const path = `parts/${partId}/${crypto.randomUUID()}.${ext}`
 
-        const up = await supabase.storage
-          .from('part-images')
-          .upload(path, file, { upsert: false })
-
+        const up = await supabase.storage.from('part-images').upload(path, file, { upsert: false })
         if (up.error) throw up.error
 
-        const { data: pub } = supabase.storage
-          .from('part-images')
-          .getPublicUrl(path)
-
+        const { data: pub } = supabase.storage.from('part-images').getPublicUrl(path)
         const url = pub.publicUrl
 
-        const ins = await supabase.from('part_images').insert([{
-          part_id: partId,
-          url,
-          sort_order: nextSort + i,
-        }])
-
+        const ins = await supabase.from('part_images').insert([
+          {
+            part_id: partId,
+            url,
+            sort_order: nextSort + i,
+          },
+        ])
         if (ins.error) throw ins.error
       }
 
@@ -118,8 +115,12 @@ export default function PartPhotosPage() {
         </div>
 
         <div className="flex gap-3">
-          <Link className="border rounded px-3 py-2" href="/admin/donor">← Donors</Link>
-          <Link className="border rounded px-3 py-2" href={`/parts/${partId}`}>View Public</Link>
+          <Link className="border rounded px-3 py-2" href="/admin/donor">
+            ← Donors
+          </Link>
+          <Link className="border rounded px-3 py-2" href={`/parts/${partId}`}>
+            View Public
+          </Link>
         </div>
       </div>
 
@@ -148,20 +149,14 @@ export default function PartPhotosPage() {
             </div>
             <div className="p-2 flex items-center justify-between text-xs">
               <span>#{r.sort_order}</span>
-              <button
-                className="underline"
-                onClick={() => onDelete(r)}
-                disabled={busy}
-              >
+              <button className="underline" onClick={() => onDelete(r)} disabled={busy}>
                 Delete
               </button>
             </div>
           </div>
         ))}
 
-        {rows.length === 0 && (
-          <div className="text-sm text-gray-600">No photos yet.</div>
-        )}
+        {rows.length === 0 && <div className="text-sm text-gray-600">No photos yet.</div>}
       </div>
     </div>
   )
