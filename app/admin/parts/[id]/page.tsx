@@ -26,9 +26,6 @@ export default function EditPartPage() {
   const params = useParams<{ id: string }>()
   const id = params.id
 
-    // ✅ FIX: define supabase
-  const supabase = useMemo(() => getSupabaseBrowserClient(), [])
-
   const [p, setP] = useState<Part | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
