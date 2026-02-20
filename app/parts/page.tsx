@@ -1,217 +1,142 @@
-"use client"
+'use client'
 
-export const dynamic = "force-dynamic"
-
-import { useEffect, useMemo, useState } from "react"
-import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
-import { getSupabaseBrowserClient } from "@/lib/supabase"
-
-type DonorMini = {
-  id: string
-  make: string | null
-  model: string | null
-  year: number | null
-}
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { getSupabaseBrowserClient } from '@/lib/supabase'
 
 type PartRow = {
   id: string
-  donor_sled_id: string
   title: string
   category: string | null
   condition: string | null
   price: number
   quantity: number
-  bin_location: string | null
-  is_listed: boolean
   created_at: string
-  donor_sleds?: DonorMini | null
 }
 
-export default function PartsBrowsePage() {
-  const router = useRouter()
+export default function PartsPage() {
+  // ✅ Required by Next when the page uses useSearchParams (CSR bailout)
+  return (
+    <Suspense fallback={<div className="p-8">Loading…</div>}>
+      <PartsPageInner />
+    </Suspense>
+  )
+}
+
+function PartsPageInner() {
+  const supabase = useMemo(() => getSupabaseBrowserClient(), [])
   const sp = useSearchParams()
 
-  const make = (sp.get("make") ?? "").trim()
-  const model = (sp.get("model") ?? "").trim()
-  const yearRaw = (sp.get("year") ?? "").trim()
-  const donorId = (sp.get("donor") ?? "").trim()
-  const qParam = (sp.get("q") ?? "").trim()
-
-  const year = yearRaw ? Number(yearRaw) : null
-  const yearValid = yearRaw ? Number.isFinite(year) : true
+  // Example query params:
+  // /parts?q=ecm
+  const q = (sp.get('q') ?? '').trim()
 
   const [rows, setRows] = useState<PartRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [q, setQ] = useState(qParam)
-
-  useEffect(() => {
-    setQ(qParam)
-  }, [qParam])
-
-  const hasFilters = !!make || !!model || !!yearRaw || !!donorId || !!qParam
-
-  const buildUrl = (patch: Record<string, string | null>) => {
-    const next = new URLSearchParams(sp.toString())
-    for (const [k, v] of Object.entries(patch)) {
-      if (v === null || v === undefined || String(v).trim() === "") next.delete(k)
-      else next.set(k, String(v))
-    }
-    const qs = next.toString()
-    return qs ? `/parts?${qs}` : "/parts"
-  }
-
-  const clearAll = () => router.push("/parts")
+  const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
+      setErr(null)
 
-      if (yearRaw && !yearValid) {
+      // Only show listed + in-stock on public parts page
+      let query = supabase
+        .from('parts')
+        .select('id,title,category,condition,price,quantity,created_at')
+        .eq('is_listed', true)
+        .gt('quantity', 0)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+
+      // Optional simple search (client-side filter fallback)
+      // If you have a Postgres function / FTS, swap this for that.
+      const { data, error } = await query
+
+      if (error) {
+        setErr(error.message)
         setRows([])
         setLoading(false)
         return
       }
 
-      try {
-        const supabase = getSupabaseBrowserClient()
+      const base = (data ?? []) as PartRow[]
+      const filtered =
+        q.length === 0
+          ? base
+          : base.filter((r) => {
+              const blob = [r.title, r.category, r.condition]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase()
+              return blob.includes(q.toLowerCase())
+            })
 
-        let query = supabase
-          .from("parts")
-          .select(
-            "id,donor_sled_id,title,category,condition,price,quantity,bin_location,is_listed,created_at,donor_sleds(id,make,model,year)"
-          )
-          .eq("is_listed", true)
-          .gt("quantity", 0)
-          .order("created_at", { ascending: false })
-          .limit(500)
-
-        if (donorId) query = query.eq("donor_sled_id", donorId)
-        if (make) query = query.eq("donor_sleds.make", make)
-        if (model) query = query.eq("donor_sleds.model", model)
-        if (yearRaw && yearValid) query = query.eq("donor_sleds.year", Number(yearRaw))
-
-        const { data, error } = await query
-
-        if (error) {
-          console.error(error)
-          setRows([])
-        } else {
-          setRows((data ?? []) as unknown as PartRow[])
-        }
-      } catch (e) {
-        console.error(e)
-        setRows([])
-      }
-
+      setRows(filtered)
       setLoading(false)
     }
 
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [make, model, yearRaw, donorId])
-
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase()
-    if (!s) return rows
-    return rows.filter((r) => {
-      const donorBits = [
-        r.donor_sleds?.make,
-        r.donor_sleds?.model,
-        r.donor_sleds?.year ? String(r.donor_sleds.year) : null,
-      ]
-        .filter(Boolean)
-        .join(" ")
-
-      const blob = [r.title, r.category, r.condition, donorBits].filter(Boolean).join(" ").toLowerCase()
-      return blob.includes(s)
-    })
-  }, [q, rows])
-
-  const onSearchChange = (v: string) => {
-    setQ(v)
-    router.replace(buildUrl({ q: v.trim() ? v : null }))
-  }
-
-  const pageTitle = make ? `${make} Parts` : "Parts"
+  }, [supabase, q])
 
   return (
-    <div className="p-8">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+    <div className="p-8 max-w-5xl">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-3xl font-bold">{pageTitle}</h1>
-          <p className="text-sm text-gray-600 mt-1">Browse available parts (Buy Now).</p>
-
-          {hasFilters && (
-            <div className="mt-3 flex items-center gap-2 flex-wrap text-xs">
-              {make && <Chip label={`Make: ${make}`} onClear={() => router.push(buildUrl({ make: null }))} />}
-              {yearRaw && yearValid && <Chip label={`Year: ${yearRaw}`} onClear={() => router.push(buildUrl({ year: null }))} />}
-              {model && <Chip label={`Model: ${model}`} onClear={() => router.push(buildUrl({ model: null }))} />}
-              {donorId && <Chip label={`Donor: ${donorId.slice(0, 8)}…`} onClear={() => router.push(buildUrl({ donor: null }))} />}
-              {qParam && <Chip label={`Search: ${qParam}`} onClear={() => router.push(buildUrl({ q: null }))} />}
-
-              <button type="button" className="ml-1 px-3 py-1 rounded border text-xs hover:bg-gray-50" onClick={clearAll}>
-                Clear all
-              </button>
-            </div>
-          )}
-
-          {yearRaw && !yearValid && <div className="mt-3 text-xs text-red-700">Year filter is invalid.</div>}
+          <h1 className="text-3xl font-bold">Parts</h1>
+          <p className="text-sm text-gray-600 mt-1">Browse available parts currently in stock.</p>
         </div>
 
-        <input
-          className="border rounded p-2 w-full max-w-lg"
-          placeholder="Search parts (ECU, track, spindle, Polaris 800...)"
-          value={q}
-          onChange={(e) => onSearchChange(e.target.value)}
-        />
+        <div className="flex gap-3 flex-wrap">
+          <Link className="border rounded px-3 py-2" href="/">
+            ← Home
+          </Link>
+        </div>
       </div>
 
-      {loading && <div className="mt-6 text-sm text-gray-600">Loading…</div>}
+      {q ? (
+        <div className="mt-4 text-sm text-gray-600">
+          Showing results for: <span className="font-mono">{q}</span>
+        </div>
+      ) : null}
 
-      {!loading && filtered.length === 0 && <div className="mt-6 text-sm text-gray-600">No parts found.</div>}
+      {err && <div className="mt-4 text-sm text-red-700">Error: {err}</div>}
 
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((p) => (
-          <Link key={p.id} href={`/parts/${p.id}`} className="border rounded-lg p-4 hover:shadow-sm transition">
-            <div className="text-xs text-gray-600">
-              {p.category ?? "—"} • {p.condition ?? "—"}
-            </div>
+      <div className="mt-6 border rounded overflow-hidden">
+        <div className="grid grid-cols-12 bg-gray-50 text-sm font-medium px-3 py-2">
+          <div className="col-span-7">Part</div>
+          <div className="col-span-2">Price</div>
+          <div className="col-span-2">Qty</div>
+          <div className="col-span-1 text-right">Open</div>
+        </div>
 
-            <div className="mt-1 font-semibold">{p.title}</div>
-
-            {(p.donor_sleds?.make || p.donor_sleds?.model || p.donor_sleds?.year) && (
-              <div className="mt-2 text-xs text-gray-500">
-                From: {[p.donor_sleds?.year, p.donor_sleds?.make, p.donor_sleds?.model].filter(Boolean).join(" ")}
+        {loading ? (
+          <div className="p-6 text-sm text-gray-600">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="p-6 text-sm text-gray-600">No parts found.</div>
+        ) : (
+          rows.map((r) => (
+            <div key={r.id} className="grid grid-cols-12 px-3 py-3 border-t text-sm items-center">
+              <div className="col-span-7 min-w-0">
+                <div className="font-medium truncate">{r.title}</div>
+                <div className="text-xs text-gray-600">
+                  {r.category ?? '—'} • {r.condition ?? '—'} • Added {new Date(r.created_at).toLocaleString()}
+                </div>
               </div>
-            )}
 
-            <div className="mt-3 flex items-center justify-between">
-              <div className="text-lg font-bold">${Number(p.price).toFixed(2)}</div>
-              <div className="text-xs text-gray-600">Qty {p.quantity}</div>
+              <div className="col-span-2 font-semibold">${Number(r.price).toFixed(2)}</div>
+              <div className="col-span-2">{r.quantity}</div>
+
+              <div className="col-span-1 text-right">
+                <Link className="underline" href={`/parts/${r.id}`}>
+                  View
+                </Link>
+              </div>
             </div>
-
-            <div className="mt-2 text-xs text-gray-500">Listed {new Date(p.created_at).toLocaleDateString()}</div>
-          </Link>
-        ))}
+          ))
+        )}
       </div>
     </div>
-  )
-}
-
-function Chip({ label, onClear }: { label: string; onClear: () => void }) {
-  return (
-    <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-gray-100 border">
-      <span className="text-gray-800">{label}</span>
-      <button
-        type="button"
-        className="text-gray-600 hover:text-gray-900 leading-none"
-        onClick={onClear}
-        aria-label={`Clear ${label}`}
-        title="Remove filter"
-      >
-        ✕
-      </button>
-    </span>
   )
 }
