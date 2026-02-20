@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase'
-
 
 type Part = {
   id: string
@@ -26,6 +25,9 @@ export default function EditPartPage() {
   const params = useParams<{ id: string }>()
   const id = params.id
 
+  // ✅ FIX: define supabase for this client component
+  const supabase = useMemo(() => getSupabaseBrowserClient(), [])
+
   const [p, setP] = useState<Part | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -34,6 +36,7 @@ export default function EditPartPage() {
   const load = async () => {
     setLoading(true)
     setMsg(null)
+
     const { data, error } = await supabase.from('parts').select('*').eq('id', id).single()
     if (error) {
       setMsg(`Error: ${error.message}`)
@@ -41,11 +44,13 @@ export default function EditPartPage() {
     } else {
       setP(data as Part)
     }
+
     setLoading(false)
   }
 
   useEffect(() => {
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   const save = async () => {
@@ -84,6 +89,7 @@ export default function EditPartPage() {
       setMsg(`Error: ${error.message}`)
       return
     }
+
     window.location.href = `/admin/donor/${p.donor_sled_id}`
   }
 
@@ -95,7 +101,9 @@ export default function EditPartPage() {
         <h1 className="text-2xl font-bold">Edit Part</h1>
         <div className="mt-3 text-sm text-red-700">{msg ?? 'Not found.'}</div>
         <div className="mt-4">
-          <Link className="underline" href="/admin/donor">← Back</Link>
+          <Link className="underline" href="/admin/donor">
+            ← Back
+          </Link>
         </div>
       </div>
     )
@@ -109,9 +117,15 @@ export default function EditPartPage() {
           <div className="text-xs text-gray-600 font-mono mt-1">{p.id}</div>
         </div>
         <div className="flex gap-3 flex-wrap">
-          <Link className="border rounded px-3 py-2" href={`/admin/donor/${p.donor_sled_id}`}>← Back</Link>
-          <Link className="border rounded px-3 py-2" href={`/admin/parts/${p.id}/photos`}>Photos</Link>
-          <Link className="border rounded px-3 py-2" href={`/parts/${p.id}`}>Public</Link>
+          <Link className="border rounded px-3 py-2" href={`/admin/donor/${p.donor_sled_id}`}>
+            ← Back
+          </Link>
+          <Link className="border rounded px-3 py-2" href={`/admin/parts/${p.id}/photos`}>
+            Photos
+          </Link>
+          <Link className="border rounded px-3 py-2" href={`/parts/${p.id}`}>
+            Public
+          </Link>
         </div>
       </div>
 
@@ -120,9 +134,17 @@ export default function EditPartPage() {
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Title" value={p.title} onChange={(v) => setP({ ...p, title: v })} />
         <Field label="SKU" value={p.sku ?? ''} onChange={(v) => setP({ ...p, sku: v || null })} />
-        <Field label="Part Number" value={p.part_number ?? ''} onChange={(v) => setP({ ...p, part_number: v || null })} />
+        <Field
+          label="Part Number"
+          value={p.part_number ?? ''}
+          onChange={(v) => setP({ ...p, part_number: v || null })}
+        />
         <Field label="Category" value={p.category ?? ''} onChange={(v) => setP({ ...p, category: v || null })} />
-        <Field label="Condition" value={p.condition ?? ''} onChange={(v) => setP({ ...p, condition: v || null })} />
+        <Field
+          label="Condition"
+          value={p.condition ?? ''}
+          onChange={(v) => setP({ ...p, condition: v || null })}
+        />
         <Field label="Bin" value={p.bin_location ?? ''} onChange={(v) => setP({ ...p, bin_location: v || null })} />
         <Field label="Price" value={String(p.price)} onChange={(v) => setP({ ...p, price: Number(v || 0) })} />
         <Field label="Qty" value={String(p.quantity)} onChange={(v) => setP({ ...p, quantity: Number(v || 0) })} />
@@ -130,11 +152,7 @@ export default function EditPartPage() {
 
       <div className="mt-4 flex items-center gap-3">
         <label className="text-sm font-medium">Listed</label>
-        <input
-          type="checkbox"
-          checked={p.is_listed}
-          onChange={(e) => setP({ ...p, is_listed: e.target.checked })}
-        />
+        <input type="checkbox" checked={p.is_listed} onChange={(e) => setP({ ...p, is_listed: e.target.checked })} />
       </div>
 
       <div className="mt-6">
