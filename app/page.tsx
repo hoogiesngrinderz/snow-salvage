@@ -23,6 +23,7 @@ type DonorRow = {
 }
 
 export default function HomePage() {
+  const supabase = useMemo(() => getSupabaseBrowserClient(), [])
   const [loading, setLoading] = useState(true)
   const [loadingDonors, setLoadingDonors] = useState(false)
 
