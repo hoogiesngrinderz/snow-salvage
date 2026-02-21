@@ -1,9 +1,7 @@
-name: Ingest Partzilla
+name: Ingest Partzilla (Debug)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"
 
 jobs:
   ingest:
@@ -14,18 +12,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Node 20
+      - name: Setup Node 20
         uses: actions/setup-node@v3
         with:
           node-version: 20
+
+      - name: Show commit + file head (prove what is running)
+        run: |
+          echo "COMMIT:" && git rev-parse HEAD
+          echo "BRANCH:" && git branch --show-current || true
+          echo "---- partzilla.ts first 80 lines ----"
+          nl -ba scripts/ingest/partzilla.ts | sed -n '1,80p'
+          echo "---- sitemap.ts first 120 lines ----"
+          nl -ba scripts/ingest/lib/sitemap.ts | sed -n '1,120p'
+          echo "---- supabaseAdmin.ts first 80 lines ----"
+          nl -ba scripts/ingest/lib/supabaseAdmin.ts | sed -n '1,80p'
 
       - name: Install
         run: npm install
 
       - name: Debug env presence (safe)
         run: |
-          echo "SUPABASE_URL is: ${SUPABASE_URL:+SET}${SUPABASE_URL:-EMPTY}"
-          echo "SUPABASE_SERVICE_ROLE_KEY is: ${SUPABASE_SERVICE_ROLE_KEY:+SET}${SUPABASE_SERVICE_ROLE_KEY:-EMPTY}"
+          echo "SUPABASE_URL: ${SUPABASE_URL:+SET}${SUPABASE_URL:-EMPTY}"
+          echo "SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:+SET}${SUPABASE_SERVICE_ROLE_KEY:-EMPTY}"
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
