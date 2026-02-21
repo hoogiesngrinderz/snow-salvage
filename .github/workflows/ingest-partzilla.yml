@@ -3,31 +3,33 @@ name: Ingest Partzilla
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"   # daily at 3am UTC
+    - cron: "0 3 * * *"
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Setup Node 20
+      - name: Node 20
         uses: actions/setup-node@v3
         with:
           node-version: 20
 
-      - name: Install dependencies
+      - name: Install
         run: npm install
 
-      - name: Debug dotenv
+      - name: Debug env presence (safe)
         run: |
-          grep -n '"dotenv"' package.json || true
-          npm ls dotenv || true
-          node -e "console.log(require.resolve('dotenv/config'))"
+          echo "SUPABASE_URL is: ${SUPABASE_URL:+SET}${SUPABASE_URL:-EMPTY}"
+          echo "SUPABASE_SERVICE_ROLE_KEY is: ${SUPABASE_SERVICE_ROLE_KEY:+SET}${SUPABASE_SERVICE_ROLE_KEY:-EMPTY}"
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Run Partzilla ingestor
+      - name: Run ingestor
         run: npx tsx scripts/ingest/partzilla.ts
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
