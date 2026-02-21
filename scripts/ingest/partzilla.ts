@@ -8,20 +8,28 @@ const supabase = getSupabaseAdmin()
 
 async function fetchText(url: string): Promise<string> {
   const res = await fetch(url, {
+    redirect: "follow",
     headers: {
       "user-agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept":
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "accept-language": "en-US,en;q=0.9",
       "cache-control": "no-cache",
       "pragma": "no-cache",
+      "referer": "https://www.partzilla.com/",
     },
-  });
+  })
+
+  const text = await res.text()
 
   if (!res.ok) {
-    throw new Error(`${res.status} ${url}`);
+    // Print a small snippet so we know what is blocking us
+    const snippet = text.slice(0, 400).replace(/\s+/g, " ")
+    throw new Error(`${res.status} ${url}\n${snippet}`)
   }
-  return await res.text();
+
+  return text
 }
 
 const SITEMAP = 'https://www.partzilla.com/sitemap/i/catalog/0.xml'
