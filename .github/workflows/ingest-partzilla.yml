@@ -1,47 +1,65 @@
 name: Ingest Partzilla
 
 on:
-  schedule:
-    - cron: "0 3 * * *"   # daily 3am UTC
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"   # daily at 3am UTC
 
 jobs:
   ingest:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-      - uses: actions/setup-node@v3
+      - name: Setup Node
+        uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      - name: Show where we are + list package.json files
+      # ---- HARD RESET package.json (guaranteed valid) ----
+      - name: Force known-good package.json
         run: |
-          pwd
-          ls -la
-          echo "---- package.json locations ----"
-          find . -maxdepth 4 -name package.json -print
+          cat > package.json <<'JSON'
+          {
+            "name": "snow-salvage",
+            "version": "0.1.0",
+            "private": true,
+            "scripts": {
+              "dev": "next dev",
+              "build": "next build",
+              "start": "next start",
+              "lint": "eslint"
+            },
+            "dependencies": {
+              "@supabase/supabase-js": "^2.97.0",
+              "next": "16.1.6",
+              "react": "19.2.3",
+              "react-dom": "19.2.3",
+              "fast-xml-parser": "^4.0.0",
+              "cheerio": "^1.0.0",
+              "p-queue": "^7.0.0"
+            },
+            "devDependencies": {
+              "@tailwindcss/postcss": "^4",
+              "@types/node": "^20",
+              "@types/react": "^19",
+              "@types/react-dom": "^19",
+              "eslint": "^9",
+              "eslint-config-next": "16.1.6",
+              "tailwindcss": "^4",
+              "typescript": "^5"
+            }
+          }
+          JSON
 
-      - name: Print and validate package.json used by npm
-        run: |
-          echo "---- first 120 lines (with line numbers) ----"
-          nl -ba package.json | sed -n '1,120p'
-          echo "---- show bytes around error zone ----"
-          python3 - << 'PY'
-          import pathlib
-          p = pathlib.Path("package.json").read_bytes()
-          start = max(0, 322-80)
-          end = min(len(p), 322+80)
-          print(p[start:end])
-          PY
-          echo "---- JSON parse test ----"
           node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
 
-      - name: Install deps
+      - name: Install dependencies
         run: npm install
 
-      - name: Run ingestor
+      - name: Run Partzilla ingestor
         run: node scripts/ingest/partzilla.ts
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
