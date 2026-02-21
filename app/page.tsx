@@ -134,7 +134,7 @@ export default function HomePage() {
 
         {/* ✅ UPDATED: lighter / opaque overlay */}
         <div className="absolute inset-0 bg-white/5" />
-        <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-white/45 to-[#070A0F]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-white/45 to-white" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.45),transparent_60%)]" />
 
         <div className="relative px-6 py-14 md:py-20 max-w-6xl mx-auto">
