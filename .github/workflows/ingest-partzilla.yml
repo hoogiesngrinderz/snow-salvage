@@ -16,31 +16,33 @@ jobs:
         with:
           node-version: 18
 
-- name: Show where we are + list package.json files
-  run: |
-    pwd
-    ls -la
-    echo "---- package.json locations ----"
-    find . -maxdepth 4 -name package.json -print
+      - name: Show where we are + list package.json files
+        run: |
+          pwd
+          ls -la
+          echo "---- package.json locations ----"
+          find . -maxdepth 4 -name package.json -print
 
-- name: Print and validate package.json used by npm
-  run: |
-    echo "---- first 80 lines (with line numbers) ----"
-    nl -ba package.json | sed -n '1,120p'
-    echo "---- show bytes around error zone ----"
-    python3 - << 'PY'
-import pathlib
-p = pathlib.Path("package.json").read_bytes()
-start = max(0, 322-80)
-end = min(len(p), 322+80)
-print(p[start:end])
-PY
-    echo "---- JSON parse test ----"
-    node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
+      - name: Print and validate package.json used by npm
+        run: |
+          echo "---- first 120 lines (with line numbers) ----"
+          nl -ba package.json | sed -n '1,120p'
+          echo "---- show bytes around error zone ----"
+          python3 - << 'PY'
+          import pathlib
+          p = pathlib.Path("package.json").read_bytes()
+          start = max(0, 322-80)
+          end = min(len(p), 322+80)
+          print(p[start:end])
+          PY
+          echo "---- JSON parse test ----"
+          node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
 
-      - run: npm install
+      - name: Install deps
+        run: npm install
 
-      - run: node scripts/ingest/partzilla.ts
+      - name: Run ingestor
+        run: node scripts/ingest/partzilla.ts
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
