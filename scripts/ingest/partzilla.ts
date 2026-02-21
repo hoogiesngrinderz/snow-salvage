@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import PQueue from 'p-queue'
 import * as cheerio from 'cheerio'
 import { expandSitemap } from './lib/sitemap'
