@@ -6,14 +6,22 @@ import { getSupabaseAdmin } from './lib/supabaseAdmin'
 
 const supabase = getSupabaseAdmin()
 
-async function fetchText(url: string) {
+async function fetchText(url: string): Promise<string> {
   const res = await fetch(url, {
     headers: {
-      'User-Agent': 'snow-salvage-bot/1.0 (contact: you@yourdomain.com)'
-    }
-  })
-  if (!res.ok) throw new Error(`${res.status} ${url}`)
-  return res.text()
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9",
+      "cache-control": "no-cache",
+      "pragma": "no-cache",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`${res.status} ${url}`);
+  }
+  return await res.text();
 }
 
 const SITEMAP = 'https://www.partzilla.com/sitemap/i/catalog/0.xml'
